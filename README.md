@@ -55,21 +55,25 @@ cat /var/log/nginx/error.log | tail -n 20 | ai explain these errors
 ai generate a json array of 5 fruits > fruits.json
 ```
 
-### 3. Pragmatic Agent Mode (`-a`)
-Run autonomous multi-step tasks using `bash`, `read_file`, `write_file`, and `web_search`.
-By default, actions execute automatically. You can enable manual confirmation per action with `-c / --confirm` or in your config.
+### 3. Agent Mode (Default)
+By default, `ai` runs as an autonomous agent equipped with 5 essential tools (`bash`, `read_file`, `write_file`, `search_web`, `fetch_web_page`) to solve tasks and research questions.
 
 ```bash
-# Autonomous task (executes actions automatically)
-ai -a "inspect this git repository and list the top 3 largest python functions"
+# Autonomous research & web searching
+ai who is denis bolba
 
-# Research and scaffold with live web search
-ai -a "search for the latest zig 0.14 build system changes and create a build.zig"
+# Inspect local code & run commands
+ai inspect this git repository and list the top 3 largest python functions
 
-# Require manual confirmation before each action (-c)
-ai -a -c "remove all temp and cache files in the current folder"
+# Require manual confirmation before each tool action (-c)
+ai -c "remove all temp and cache files in the current folder"
 ```
 
+### 4. Pure No-Tools Completion (`-n / --no-tools`)
+If you want direct token streaming without tool execution:
+```bash
+ai -n "explain quantum computing in 3 bullets"
+```
 ---
 
 ## Configuration Cascade

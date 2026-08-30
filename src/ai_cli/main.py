@@ -502,21 +502,22 @@ def main() -> None:
         description="Lightning-fast streaming AI CLI with zero external dependencies and agentic tool mode.",
         epilog=(
             "Examples:\n"
+            "  ai who is denis bolba\n"
             "  ai what is the biggest thing on the moon\n"
             "  git diff | ai summarize changes in 3 bullets\n"
-            "  ai -a 'inspect package.json and run the test script'\n"
-            "  ai -a 'search latest zig 0.14 release notes and summarize key changes'\n"
-            "  ai -s 'Reply in haiku' explain rust\n"
+            "  ai inspect package.json and run the test script\n"
+            "  ai -n 'Reply in haiku' explain rust (pure prompt mode, no tools)\n"
             "  ai -m claude-3-5-sonnet 'explain quantum entanglement'"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("prompt", nargs="*", help="User prompt or instruction")
     parser.add_argument(
-        "-a",
-        "--agent",
+        "-n",
+        "--no-tools",
+        "--no-agent",
         action="store_true",
-        help="Enable autonomous agent mode with tools (bash, read_file, write_file, web_search)",
+        help="Disable tools and run in fast direct streaming completion mode",
     )
     parser.add_argument(
         "-c",
@@ -618,8 +619,17 @@ def main() -> None:
         parser.print_help(sys.stderr)
         sys.exit(1)
 
-    if args.agent:
-        # Determine approval policy: CLI flag overrides config, default is False (auto-approve)
+    if args.no_tools:
+        run_stream_completion(
+            base_url=args.base_url,
+            api_key=args.api_key,
+            model=args.model,
+            user_content=user_content,
+            system_prompt=args.system,
+            temperature=args.temperature,
+        )
+    else:
+        # Agent mode is default
         require_approval = config.get("require_approval", False)
         if args.confirm is True:
             require_approval = True
@@ -627,8 +637,6 @@ def main() -> None:
             require_approval = False
 
         auto_approve = not require_approval
-
-    if args.agent:
         try:
             run_agent_loop(
                 base_url=args.base_url,
@@ -643,15 +651,6 @@ def main() -> None:
         except KeyboardInterrupt:
             print("\nAborted.")
             sys.exit(130)
-    else:
-        run_stream_completion(
-            base_url=args.base_url,
-            api_key=args.api_key,
-            model=args.model,
-            user_content=user_content,
-            system_prompt=args.system,
-            temperature=args.temperature,
-        )
 
 if __name__ == "__main__":
     main()
