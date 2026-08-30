@@ -180,41 +180,45 @@ def execute_write_file(path_str: str, content: str) -> str:
         return f"[Error writing file: {e}]"
 
 
-def execute_web_search(query: str, max_results: int = 6) -> str:
-    """Search DuckDuckGo HTML without external dependencies or API keys."""
-    url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}"
+def execute_web_search(query: str, max_results: int = 8) -> str:
+    """Search DuckDuckGo Lite without external dependencies or API keys."""
+    url = "https://lite.duckduckgo.com/lite/"
+    data = urllib.parse.urlencode({"q": query}).encode("utf-8")
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Referer": "https://duckduckgo.com/",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Referer": "https://lite.duckduckgo.com/",
     }
-    req = urllib.request.Request(url, headers=headers)
+    req = urllib.request.Request(url, data=data, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             page = resp.read().decode("utf-8", errors="ignore")
 
         results = []
-        # Extract both title, url, and snippet
-        blocks = re.findall(r'<div class="result__body">(.*?)</div>\s*</div>', page, re.DOTALL)
-        if not blocks:
-            blocks = re.findall(r'<a class="result__snippet[^"]*"[^>]*href="([^"]+)"[^>]*>(.*?)</a>', page, re.DOTALL)
-            for link_raw, snip_raw in blocks[:max_results]:
-                url_match = re.search(r"uddg=([^&]+)", link_raw)
-                link = urllib.parse.unquote(url_match.group(1)) if url_match else link_raw
-                snip = html.unescape(re.sub(r"<[^>]+>", "", snip_raw).strip())
-                results.append(f"- URL: {link}\n  Snippet: {snip}")
-        else:
-            for block in blocks[:max_results]:
-                link_m = re.search(r'<a class="result__url"[^>]*href="([^"]+)"', block)
-                title_m = re.search(r'<a class="result__a"[^>]*>(.*?)</a>', block, re.DOTALL)
-                snip_m = re.search(r'<a class="result__snippet"[^>]*>(.*?)</a>', block, re.DOTALL)
-                if not link_m:
-                    continue
-                url_raw = link_m.group(1)
-                url_match = re.search(r"uddg=([^&]+)", url_raw)
-                link = urllib.parse.unquote(url_match.group(1)) if url_match else url_raw
-                title = html.unescape(re.sub(r"<[^>]+>", "", title_m.group(1)).strip()) if title_m else "Page"
-                snip = html.unescape(re.sub(r"<[^>]+>", "", snip_m.group(1)).strip()) if snip_m else ""
-                results.append(f"- Title: {title}\n  URL: {link}\n  Snippet: {snip}")
+        link_matches = list(
+            re.finditer(
+                r"<a[^>]*href=\"([^\"]+)\"[^>]*class=[\x27\"]result-link[\x27\"][^>]*>(.*?)</a>",
+                page,
+                re.DOTALL,
+            )
+        )
+        snippet_matches = list(
+            re.finditer(
+                r"<td[^>]*class=[\x27\"]result-snippet[\x27\"][^>]*>(.*?)</td>",
+                page,
+                re.DOTALL,
+            )
+        )
+
+        for lm, sm in zip(link_matches, snippet_matches):
+            raw_url = lm.group(1)
+            url_match = re.search(r"uddg=([^&]+)", raw_url)
+            link = urllib.parse.unquote(url_match.group(1)) if url_match else raw_url
+            title = html.unescape(re.sub(r"<[^>]+>", "", lm.group(2)).strip())
+            snippet = html.unescape(re.sub(r"<[^>]+>", "", sm.group(1)).strip())
+            results.append(f"- **Title:** {title}\n  **URL:** {link}\n  **Snippet:** {snippet}")
+            if len(results) >= max_results:
+                break
 
         return "\n\n".join(results) if results else "No results found."
     except Exception as e:
