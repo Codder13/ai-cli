@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/ai-cli
+      url: https://pypi.org/p/ai-flow-cli
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
