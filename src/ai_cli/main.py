@@ -408,6 +408,19 @@ def run_agent_loop(
                 q = args.get("query") or args.get("q") or args.get("search_terms") or ""
                 print(f"\033[1;35m🌐 Search Web:\033[0m \033[36m{q}\033[0m")
                 output = execute_web_search(q)
+                if output.startswith("[Web Search Error") or output == "No results found.":
+                    print(f"  \033[31m✗ {output}\033[0m")
+                else:
+                    # Count found results
+                    items = [line for line in output.split("\n\n") if line.strip().startswith("- **")]
+                    count = len(items) if items else 1
+                    print(f"  \033[32m✓ Found {count} result{'s' if count != 1 else ''}\033[0m")
+                    for item in items[:3]:
+                        first_line = item.strip().split("\n")[0]
+                        clean_first = first_line.replace("- **Title:**", "•").replace("- **URL:**", "•")
+                        print(f"    \033[90m{clean_first[:85]}\033[0m")
+                    if len(items) > 3:
+                        print(f"    \033[90m... and {len(items)-3} more\033[0m")
                 messages.append({"role": "tool", "tool_call_id": tool_id, "content": output})
 
             elif fname in ("fetch_web_page", "read_url", "fetch_url"):
@@ -415,10 +428,13 @@ def run_agent_loop(
                 mc = args.get("max_chars", 4000)
                 print(f"\033[1;35m📄 Fetch Page:\033[0m \033[36m{u}\033[0m")
                 output = execute_fetch_web_page(u, max_chars=mc)
+                if output.startswith("[Error"):
+                    print(f"  \033[31m✗ {output}\033[0m")
+                else:
+                    print(f"  \033[32m✓ Fetched {len(output)} chars\033[0m")
                 messages.append({"role": "tool", "tool_call_id": tool_id, "content": output})
             else:
                 messages.append({"role": "tool", "tool_call_id": tool_id, "content": f"[Unknown tool: {fname}]"})
-
 
 def run_stream_completion(
     base_url: str,
