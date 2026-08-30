@@ -68,8 +68,8 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "web_search",
-            "description": "Search the web.",
+            "name": "search_web",
+            "description": "Search the web for information, documentation, or news.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -308,12 +308,11 @@ def run_agent_loop(
                 print(f"\033[90m{output}\033[0m")
                 messages.append({"role": "tool", "tool_call_id": tool_id, "content": output})
 
-            elif fname == "web_search":
-                q = args.get("query", "")
-                print(f"\033[1;35m🌐 Web Search:\033[0m \033[36m{q}\033[0m")
+            elif fname in ("search_web", "web_search", "search", "internet_search"):
+                q = args.get("query") or args.get("q") or args.get("search_terms") or ""
+                print(f"\033[1;35m🌐 Search Web:\033[0m \033[36m{q}\033[0m")
                 output = execute_web_search(q)
                 messages.append({"role": "tool", "tool_call_id": tool_id, "content": output})
-
             else:
                 messages.append({"role": "tool", "tool_call_id": tool_id, "content": f"[Unknown tool: {fname}]"})
 
@@ -446,6 +445,12 @@ def main() -> None:
         help="Sampling temperature (0.0 - 2.0)",
     )
     parser.add_argument(
+        "--max-turns",
+        type=int,
+        default=25,
+        help="Maximum tool execution turns in agent mode (default: 25)",
+    )
+    parser.add_argument(
         "--init-config",
         action="store_true",
         help="Create a default config template at ~/.config/ai/config.json",
@@ -504,15 +509,22 @@ def main() -> None:
 
         auto_approve = not require_approval
 
-        run_agent_loop(
-            base_url=args.base_url,
-            api_key=args.api_key,
-            model=args.model,
-            user_content=user_content,
-            system_prompt=args.system,
-            temperature=args.temperature,
-            auto_approve=auto_approve,
-        )
+    if args.agent:
+        try:
+            run_agent_loop(
+                base_url=args.base_url,
+                api_key=args.api_key,
+                model=args.model,
+                user_content=user_content,
+                system_prompt=args.system,
+                temperature=args.temperature,
+                max_turns=args.max_turns,
+                auto_approve=auto_approve,
+            )
+        except KeyboardInterrupt:
+            print("\nAborted.")
+            sys.exit(130)
+    else:
         run_stream_completion(
             base_url=args.base_url,
             api_key=args.api_key,
@@ -521,7 +533,6 @@ def main() -> None:
             system_prompt=args.system,
             temperature=args.temperature,
         )
-
 
 if __name__ == "__main__":
     main()
