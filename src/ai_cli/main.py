@@ -16,7 +16,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 CONFIG_DIR = Path.home() / ".config" / "ai"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 SESSION_MAX_MESSAGES = 20
@@ -60,6 +60,61 @@ def clear_session_history() -> None:
             session_file.unlink(missing_ok=True)
         except Exception:
             pass
+def render_terminal_markdown(text: str) -> str:
+    """Render markdown into clean ANSI-formatted text for terminal viewing."""
+    if not sys.stdout.isatty():
+        return text
+
+    lines = []
+    in_code_block = False
+
+    for raw_line in text.splitlines():
+        line = raw_line
+        # Code blocks
+        if line.strip().startswith("```"):
+            in_code_block = not in_code_block
+            lines.append("\033[90m" + ("─" * 45) + "\033[0m")
+            continue
+        if in_code_block:
+            lines.append("\033[33m  " + line + "\033[0m")
+            continue
+
+        # Headers: # H1, ## H2, ### H3
+        m = re.match(r"^(#{1,6})\s+(.*)$", line)
+        if m:
+            level = len(m.group(1))
+            title = m.group(2)
+            if level == 1:
+                lines.append(f"\n\033[1;4;34m{title}\033[0m")
+            elif level == 2:
+                lines.append(f"\n\033[1;36m{title}\033[0m")
+            else:
+                lines.append(f"\n\033[1;37m{title}\033[0m")
+            continue
+
+        # Horizontal rule
+        if re.match(r"^(-{3,}|\*{3,}|_{3,})$", line.strip()):
+            lines.append("\033[90m" + ("─" * 45) + "\033[0m")
+            continue
+
+        # Markdown links: [Title](URL) -> Title (URL)
+        line = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\033[4;36m\1\033[0m \033[90m(\2)\033[0m", line)
+
+        # Bold: **bold**
+        line = re.sub(r"\*\*([^*]+)\*\*", r"\033[1m\1\033[0m", line)
+
+        # Inline code: `code`
+        line = re.sub(r"`([^`]+)`", r"\033[33m\1\033[0m", line)
+
+        # Bullet lists: * or -
+        line = re.sub(r"^(\s*)[*-]\s+", r"\1\033[36m•\033[0m ", line)
+
+        # Numbered lists: 1. 2.
+        line = re.sub(r"^(\s*)(\d+)\.\s+", r"\1\033[36m\2.\033[0m ", line)
+
+        lines.append(line)
+
+    return "\n".join(lines)
 
 TOOLS = [
     {
@@ -387,7 +442,7 @@ def run_agent_loop(
             # Final output text from the model
             content = message.get("content", "")
             if content:
-                print(content)
+                print(render_terminal_markdown(content))
                 # Persist updated session history
                 updated_history = list(history)
                 updated_history.append({"role": "user", "content": user_content})
