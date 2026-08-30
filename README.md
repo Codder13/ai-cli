@@ -82,8 +82,20 @@ ai -c "remove all temp and cache files in the current folder"
 # Clear conversation memory for the current tab:
 ❯ ai -C    # or ai --clear
 ```
+### 5. Handoff to Heavy Harnesses (`-H / --handoff`)
+When a simple task evolves into a large-scale refactor, codebase overhaul, or multi-file debugging session, seamlessly hand off your entire conversation session context to a full workspace agent:
 
-### 5. Pure No-Tools Completion (`-n / --no-tools`)
+```bash
+# Handoff conversation to Oh My Pi (default):
+❯ ai -H "Refactor all affected modules and run test suite"
+
+# Handoff to Claude Code:
+❯ ai -H claude "Fix all broken unit tests across the whole workspace"
+
+# Supported harnesses: omp, claude, codex, pi
+```
+
+### 6. Pure No-Tools Completion (`-n / --no-tools`)
 If you want direct token streaming without tool execution:
 ```bash
 ai -n "explain quantum computing in 3 bullets"

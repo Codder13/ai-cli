@@ -16,7 +16,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 CONFIG_DIR = Path.home() / ".config" / "ai"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 SESSION_MAX_MESSAGES = 20
@@ -60,6 +60,59 @@ def clear_session_history() -> None:
             session_file.unlink(missing_ok=True)
         except Exception:
             pass
+def format_session_for_handoff() -> str:
+    """Format conversation messages from current shell session into a unified context prompt."""
+    history = load_session_history()
+    if not history:
+        return ""
+    formatted = ["=== Conversation Context from ai-cli Terminal Session ==="]
+    for msg in history:
+        role = msg.get("role", "user").capitalize()
+        content = msg.get("content", "").strip()
+        formatted.append(f"\n[{role}]:\n{content}")
+    formatted.append("\n=== End Context ===\nPlease continue and solve the task based on the context above.")
+    return "\n".join(formatted)
+
+def execute_handoff(target_harness: str = "omp", extra_instruction: str = "") -> None:
+    """Handoff session context and launch the target agent harness (omp, claude, codex, pi)."""
+    import shutil
+
+    context = format_session_for_handoff()
+    full_prompt = context
+    if extra_instruction:
+        full_prompt = f"{context}\n\nAdditional Instruction: {extra_instruction}" if context else extra_instruction
+
+    harness = (target_harness or "omp").lower().strip()
+
+    # Find executable binary
+    bin_name = harness
+    if harness in ("omp", "hermes"):
+        bin_path = shutil.which("omp") or shutil.which("hermes")
+        label = "Oh My Pi (OMP)"
+    elif harness in ("claude", "claude-code"):
+        bin_path = shutil.which("claude")
+        label = "Claude Code"
+    elif harness in ("codex",):
+        bin_path = shutil.which("codex")
+        label = "Codex"
+    elif harness in ("pi",):
+        bin_path = shutil.which("pi")
+        label = "Pi"
+    else:
+        bin_path = shutil.which(harness)
+        label = harness
+
+    if not bin_path:
+        print(f"\033[31mError:\033[0m Harness binary for '{harness}' not found in PATH.", file=sys.stderr)
+        print("Supported harnesses: omp, claude, codex, pi", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"\033[1;35m🚀 Handing off session to {label} ({bin_path})...\033[0m")
+    if full_prompt:
+        os.execvp(bin_path, [bin_path, full_prompt])
+    else:
+        os.execvp(bin_path, [bin_path])
+
 def print_markdown(text: str) -> None:
     """Render markdown using rich into clean terminal output, or plain text if piped."""
     if not sys.stdout.isatty():
@@ -649,6 +702,15 @@ def main() -> None:
         action="store_true",
         help="Clear conversation memory for the current terminal session",
     )
+    parser.add_argument(
+        "-H",
+        "--handoff",
+        nargs="?",
+        const="omp",
+        default=None,
+        metavar="HARNESS",
+        help="Handoff session context and launch a heavy agent harness (omp, claude, codex, pi; default: omp)",
+    )
 
     args = parser.parse_args()
 
@@ -669,6 +731,10 @@ def main() -> None:
     if args.clear:
         clear_session_history()
         print("✨ Cleared conversation session memory.")
+        sys.exit(0)
+    if args.handoff is not None:
+        extra_inst = " ".join(args.prompt).strip()
+        execute_handoff(args.handoff, extra_inst)
         sys.exit(0)
 
     # Ingest stdin if piped
