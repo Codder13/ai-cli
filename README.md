@@ -48,6 +48,8 @@ sudo pacman -S python-rich
 
 ## 🛠️ Usage
 
+> 💡 **No quotes required:** You can type your prompts directly without quotation marks across all flags and commands!
+
 ### 1. Direct Asking & Autonomous Tasks (Default)
 `ai` runs in agent mode by default, choosing when to search the web, read files, or execute commands to give you an accurate, grounded answer:
 
@@ -62,14 +64,31 @@ ai inspect package.json and run the build script
 ai what is the biggest crater on the moon
 ```
 
-### 2. Pure No-Tools Streaming (`-n / --no-tools`)
+### 2. Sandbox Security & Modification Bypass (`-s / --no-sandbox`)
+By default, all command executions and file operations are protected in a **strict read-only Bubblewrap (`bwrap`) sandbox**:
+* 🔒 **Read-Only System**: Root (`/`), `/etc`, `/usr`, and project files cannot be accidentally modified.
+* 🔒 **Isolated Secrets**: `~/.ssh`, `~/.gnupg`, and `~/.aws` are masked with empty filesystems.
+
+To allow creating files, modifying code, or running system commands, pass **`-s`** (unquoted):
+```bash
+# Create files without quotes:
+ai -s create this and that
+
+# Write code and scripts:
+ai -s create a python script that tests database connections
+
+# Install system packages:
+ai -s install ripgrep with pacman
+```
+
+### 3. Pure No-Tools Streaming (`-n / --no-tools`)
 If you want instant, direct token streaming without tool execution:
 
 ```bash
-ai -n "explain quantum computing in 3 bullets"
+ai -n explain quantum computing in 3 bullets
 ```
 
-### 3. Unix Pipelines & Stdin
+### 4. Unix Pipelines & Stdin
 Pipe terminal output directly into `ai` with or without trailing instructions:
 
 ```bash
@@ -83,7 +102,7 @@ cat /var/log/nginx/error.log | tail -n 20 | ai explain these errors
 ai -n generate a json array of 5 fruits > fruits.json
 ```
 
-### 4. Terminal Session Memory (Automatic)
+### 5. Terminal Session Memory (Automatic)
 `ai` automatically preserves conversation history within the same terminal tab/session:
 
 ```bash
@@ -97,41 +116,27 @@ ai -n generate a json array of 5 fruits > fruits.json
 ❯ ai -C    # or ai --clear
 ```
 
-### 5. Handoff to Heavy Harnesses (`-H / --handoff`)
+### 6. Handoff to Heavy Harnesses (`-H / --handoff`)
 When a simple task evolves into a large-scale refactor, codebase overhaul, or multi-file debugging session, hand off your entire conversation session context to a full workspace agent:
 
 ```bash
 # Handoff conversation to Oh My Pi / Hermes (default):
-❯ ai -H "Refactor all affected modules and run test suite"
+❯ ai -H Refactor all affected modules and run test suite
 
 # Handoff to Claude Code:
-❯ ai -H claude "Fix all broken unit tests across the whole workspace"
+❯ ai -H claude Fix all broken unit tests across the whole workspace
 
 # Supported harnesses: omp, claude, codex, pi
-```
-
-### 6. Sandbox Security (`-s / --no-sandbox`)
-By default, all command executions are sandboxed inside Linux **Bubblewrap (`bwrap`)**:
-* 🔒 **Read-Only System**: Root (`/`), `/etc`, `/usr`, and system directories cannot be modified.
-* 🔒 **Isolated Secrets**: `~/.ssh`, `~/.gnupg`, and `~/.aws` are masked with empty filesystems.
-* 📁 **Writable PWD**: Only the current working directory is writable.
-
-To disable the sandbox and execute commands directly on the host:
-```bash
-ai -s "install package with pacman"
-# or
-ai --no-sandbox "systemctl restart my-service"
 ```
 
 ### 7. Interactive Tool Approvals (`-c / --confirm`)
 By default, `ai` executes safe tools autonomously. If you prefer human-in-the-loop confirmation before each action:
 
 ```bash
-ai -c "clean up temp and cache files in this directory"
+ai -c clean up temp and cache files in this directory
 ```
 
 ---
-
 ## ⚙️ Configuration Cascade
 
 `ai-cli` resolves configuration in the following order:
