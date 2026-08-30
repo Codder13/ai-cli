@@ -253,7 +253,6 @@ def execute_bash(command: str, max_chars: int = 12000, sandbox: bool = True) -> 
             "--tmpfs", "/tmp",
             "--tmpfs", f"{home}/.ssh",
             "--tmpfs", f"{home}/.gnupg",
-            "--bind", pwd, pwd,
             "--share-net",
             "--",
             "/bin/bash", "-c", command,
@@ -295,8 +294,10 @@ def execute_read_file(path_str: str, limit: int = None) -> str:
         return f"[Error reading file: {e}]"
 
 
-def execute_write_file(path_str: str, content: str) -> str:
-    """Write file content safely."""
+def execute_write_file(path_str: str, content: str, sandbox: bool = True) -> str:
+    """Write file content safely (blocked in read-only sandbox mode)."""
+    if sandbox:
+        return f"[Sandbox Violation: Cannot write to '{path_str}' because the sandbox is in read-only mode. Use -s / --no-sandbox to allow file modifications.]"
     path = Path(path_str).expanduser()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -305,7 +306,6 @@ def execute_write_file(path_str: str, content: str) -> str:
         return f"[Successfully wrote {len(content.encode('utf-8'))} bytes to '{path_str}']"
     except Exception as e:
         return f"[Error writing file: {e}]"
-
 
 def execute_web_search(query: str, max_results: int = 8) -> str:
     """Search the web with automatic multi-engine fallbacks (Startpage, DuckDuckGo, Bing)."""
@@ -526,7 +526,7 @@ def run_agent_loop(
                     elif ans == "n":
                         messages.append({"role": "tool", "tool_call_id": tool_id, "content": "[File write rejected by user]"})
                         continue
-                output = execute_write_file(p, c)
+                output = execute_write_file(p, c, sandbox=sandbox)
                 print(f"\033[90m{output}\033[0m")
                 messages.append({"role": "tool", "tool_call_id": tool_id, "content": output})
 
