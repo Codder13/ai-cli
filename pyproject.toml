@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "ai-stream-cli"
+name = "ai-cli"
 version = "0.8.0"
 description = "⚡ Zero-dependency, ultra-fast streaming AI CLI for Unix pipelines"
 readme = "README.md"
