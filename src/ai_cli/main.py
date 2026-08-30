@@ -16,7 +16,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 CONFIG_DIR = Path.home() / ".config" / "ai"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 SESSION_MAX_MESSAGES = 20
@@ -65,18 +65,89 @@ def render_terminal_markdown(text: str) -> str:
     if not sys.stdout.isatty():
         return text
 
-    lines = []
+    raw_lines = text.splitlines()
+    processed_lines = []
     in_code_block = False
+    table_buffer = []
 
-    for raw_line in text.splitlines():
+    def flush_table():
+        nonlocal table_buffer
+        if not table_buffer:
+            return
+        rows = []
+        for tl in table_buffer:
+            cells = [c.strip() for c in tl.strip().strip("|").split("|")]
+            rows.append(cells)
+        table_buffer = []
+        content_rows = [r for r in rows if not all(re.match(r"^:?-+:?$", c) for c in r if c)]
+        if not content_rows:
+            return
+        num_cols = max(len(r) for r in content_rows)
+        col_widths = [0] * num_cols
+        for r in content_rows:
+            for i, c in enumerate(r):
+                col_widths[i] = max(col_widths[i], len(re.sub(r"\x1b\[[0-9;]*m", "", c)))
+        hdr = content_rows[0]
+        hdr_cells = [hdr[i] if i < len(hdr) else "" for i in range(num_cols)]
+        processed_lines.append("  \x1b[1;36m┌" + "┬".join("─" * (w + 2) for w in col_widths) + "┐\x1b[0m")
+        hdr_line = "  \x1b[1;36m│\x1b[0m " + " \x1b[1;36m│\x1b[0m ".join(
+            (f"\x1b[1m{hdr_cells[i]}\x1b[0m").ljust(col_widths[i] + 8) for i in range(num_cols)
+        ) + " \x1b[1;36m│\x1b[0m"
+        processed_lines.append(hdr_line)
+        processed_lines.append("  \x1b[1;36m├" + "┼".join("─" * (w + 2) for w in col_widths) + "┤\x1b[0m")
+        for r in content_rows[1:]:
+            padded = [r[i] if i < len(r) else "" for i in range(num_cols)]
+            row_str = "  \x1b[1;36m│\x1b[0m " + " \x1b[1;36m│\x1b[0m ".join(
+                padded[i].ljust(col_widths[i]) for i in range(num_cols)
+            ) + " \x1b[1;36m│\x1b[0m"
+            processed_lines.append(row_str)
+        processed_lines.append("  \x1b[1;36m└" + "┴".join("─" * (w + 2) for w in col_widths) + "┘\x1b[0m")
+
+    for raw_line in raw_lines:
         line = raw_line
-        # Code blocks
+
+        # Code block fences (```python ... ```)
         if line.strip().startswith("```"):
-            in_code_block = not in_code_block
-            lines.append("\033[90m" + ("─" * 45) + "\033[0m")
+            if not in_code_block:
+                lang = line.strip()[3:].strip()
+                lang_tag = f" [{lang}]" if lang else ""
+                processed_lines.append(f"\x1b[90m┌─ Code{lang_tag} " + ("─" * max(15, 45 - len(lang_tag))) + "\x1b[0m")
+                in_code_block = True
+            else:
+                processed_lines.append("\x1b[90m└" + ("─" * 52) + "\x1b[0m")
+                in_code_block = False
             continue
+
         if in_code_block:
-            lines.append("\033[33m  " + line + "\033[0m")
+            processed_lines.append("\x1b[33m  " + line + "\x1b[0m")
+            continue
+
+        # Tables (| Col 1 | Col 2 |)
+        if line.strip().startswith("|") and line.strip().endswith("|"):
+            formatted_table_line = re.sub(
+                r"\[([^\]]+)\]\(([^)]+)\)",
+                lambda m: f"\x1b[4;36m{m.group(1)}\x1b[0m ({m.group(2)})",
+                line
+            )
+            formatted_table_line = re.sub(
+                r"(\*{1,2}|_{1,2})(.*?)\1",
+                lambda m: f"\x1b[1m{m.group(2)}\x1b[0m",
+                formatted_table_line
+            )
+            table_buffer.append(formatted_table_line)
+            continue
+        else:
+            flush_table()
+
+        # Blockquotes (> Quote)
+        if line.strip().startswith(">"):
+            quote_text = re.sub(r"^\s*>\s*", "", line)
+            quote_text = re.sub(
+                r"(\*{1,2}|_{1,2})(.*?)\1",
+                lambda m: f"\x1b[1m{m.group(2)}\x1b[0m",
+                quote_text
+            )
+            processed_lines.append(f"  \x1b[36m▎\x1b[0m \x1b[3m{quote_text}\x1b[0m")
             continue
 
         # Headers: # H1, ## H2, ### H3
@@ -85,36 +156,74 @@ def render_terminal_markdown(text: str) -> str:
             level = len(m.group(1))
             title = m.group(2)
             if level == 1:
-                lines.append(f"\n\033[1;4;34m{title}\033[0m")
+                processed_lines.append(f"\n\x1b[1;4;34m{title}\x1b[0m")
             elif level == 2:
-                lines.append(f"\n\033[1;36m{title}\033[0m")
+                processed_lines.append(f"\n\x1b[1;36m{title}\x1b[0m")
             else:
-                lines.append(f"\n\033[1;37m{title}\033[0m")
+                processed_lines.append(f"\n\x1b[1;37m{title}\x1b[0m")
             continue
 
         # Horizontal rule
         if re.match(r"^(-{3,}|\*{3,}|_{3,})$", line.strip()):
-            lines.append("\033[90m" + ("─" * 45) + "\033[0m")
+            processed_lines.append("\x1b[90m" + ("─" * 50) + "\x1b[0m")
             continue
 
-        # Markdown links: [Title](URL) -> Title (URL)
-        line = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\033[4;36m\1\033[0m \033[90m(\2)\033[0m", line)
+        # Task list checkboxes: - [ ] or - [x]
+        if re.match(r"^\s*[-*]\s+\[ \]\s+", line):
+            line = re.sub(r"^\s*[-*]\s+\[ \]\s+", "  \x1b[90m☐\x1b[0m ", line)
+        elif re.match(r"^\s*[-*]\s+\[[xX]\]\s+", line):
+            line = re.sub(r"^\s*[-*]\s+\[[xX]\]\s+", "  \x1b[32m☑\x1b[0m ", line)
+        # Bullet list items: * or -
+        elif re.match(r"^\s*[-*]\s+", line):
+            line = re.sub(r"^(\s*)[-*]\s+", lambda m: f"{m.group(1)}\x1b[36m•\x1b[0m ", line)
+        # Numbered lists: 1. 2.
+        elif re.match(r"^\s*\d+\.\s+", line):
+            line = re.sub(r"^(\s*)(\d+)\.\s+", lambda m: f"{m.group(1)}\x1b[36m{m.group(2)}.\x1b[0m ", line)
 
-        # Bold: **bold**
-        line = re.sub(r"\*\*([^*]+)\*\*", r"\033[1m\1\033[0m", line)
+        # Links inside bold/italic/normal: **[Title](URL)** -> Title (URL)
+        line = re.sub(
+            r"\[([^\]]+)\]\(([^)]+)\)",
+            lambda m: f"\x1b[4;36m{m.group(1)}\x1b[0m \x1b[90m({m.group(2)})\x1b[0m",
+            line
+        )
+
+        # Bold: **bold** or __bold__
+        line = re.sub(
+            r"(\*{2}|_{2})(.*?)\1",
+            lambda m: f"\x1b[1m{m.group(2)}\x1b[0m",
+            line
+        )
+
+        # Italic: *italic* or _italic_
+        line = re.sub(
+            r"(?<![\*\w])\*([^*\n]+)\*(?!\*)",
+            lambda m: f"\x1b[3m{m.group(1)}\x1b[0m",
+            line
+        )
+        line = re.sub(
+            r"(?<![_\w])_([^_\n]+)_(?!_)",
+            lambda m: f"\x1b[3m{m.group(1)}\x1b[0m",
+            line
+        )
+
+        # Strikethrough: ~~text~~
+        line = re.sub(
+            r"~~(.*?)~~",
+            lambda m: f"\x1b[9m{m.group(1)}\x1b[0m",
+            line
+        )
 
         # Inline code: `code`
-        line = re.sub(r"`([^`]+)`", r"\033[33m\1\033[0m", line)
+        line = re.sub(
+            r"`([^`]+)`",
+            lambda m: f"\x1b[33m{m.group(1)}\x1b[0m",
+            line
+        )
 
-        # Bullet lists: * or -
-        line = re.sub(r"^(\s*)[*-]\s+", r"\1\033[36m•\033[0m ", line)
+        processed_lines.append(line)
 
-        # Numbered lists: 1. 2.
-        line = re.sub(r"^(\s*)(\d+)\.\s+", r"\1\033[36m\2.\033[0m ", line)
-
-        lines.append(line)
-
-    return "\n".join(lines)
+    flush_table()
+    return "\n".join(processed_lines)
 
 TOOLS = [
     {
@@ -588,23 +697,23 @@ def run_stream_completion(
                         content = delta.get("content", "")
                         if content:
                             full_response.append(content)
-                            print(content, end="", flush=True)
                     except json.JSONDecodeError:
                         continue
-            print()
-            if full_response:
-                updated_history = list(history)
-                updated_history.append({"role": "user", "content": user_content})
-                updated_history.append({"role": "assistant", "content": "".join(full_response)})
-                save_session_history(updated_history)
+        rendered = render_terminal_markdown("".join(full_response))
+        print(rendered)
+        if full_response:
+            updated_history = list(history)
+            updated_history.append({"role": "user", "content": user_content})
+            updated_history.append({"role": "assistant", "content": "".join(full_response)})
+            save_session_history(updated_history)
     except KeyboardInterrupt:
         sys.exit(130)
+    except urllib.error.HTTPError as e:
         print(f"\n\033[31mAPI Error ({e.code}):\033[0m {e.read().decode('utf-8')}", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
         print(f"\n\033[31mError:\033[0m {e}", file=sys.stderr)
         sys.exit(1)
-
 
 def main() -> None:
     config = load_config()
