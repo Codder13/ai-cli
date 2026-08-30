@@ -23,22 +23,27 @@ Most AI command-line tools (`sgpt`, `llm`, `open-interpreter`) pull in dozens of
 
 ## 📦 Installation
 
-### 1. One-Line Install (Recommended)
-
+### 1. Recommended: Install via `mise`
 ```bash
-curl -sSL https://raw.githubusercontent.com/Codder13/ai-cli/main/install.sh | bash
+mise use -g pipx:ai-flow-cli
+# or via python backend:
+mise use -g pip:ai-flow-cli
 ```
 
-### 2. Manual / Git Clone
-
+### 2. Install via PyPI (`pip` / `pipx` / `uv`)
 ```bash
-# 1. Recommended: Install via pipx (isolated global CLI)
+# Standard pip install:
+pip install --user ai-flow-cli
+
+# Isolated global CLI with pipx:
 pipx install ai-flow-cli
 
-# 2. Install via uv
+# Fast install with uv:
 uv tool install ai-flow-cli
+```
 
-# 3. Fast one-liner install script
+### 3. One-Line Script Install
+```bash
 curl -sSL https://raw.githubusercontent.com/Codder13/ai-cli/main/install.sh | bash
 ```
 ---
