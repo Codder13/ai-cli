@@ -69,12 +69,25 @@ ai inspect this git repository and list the top 3 largest python functions
 ai -c "remove all temp and cache files in the current folder"
 ```
 
-### 4. Pure No-Tools Completion (`-n / --no-tools`)
+### 4. Terminal Session Memory (Automatic)
+`ai` automatically preserves conversation history within the same terminal tab/session (scoped by shell PID).
+
+```bash
+❯ ai who is denis bolba
+# ... Researches and explains Denis Bolba ...
+
+❯ ai what sports did he play and where is he from
+# ... Remembers "he" refers to Denis Bolba from previous turn!
+
+# Clear conversation memory for the current tab:
+❯ ai -C    # or ai --clear
+```
+
+### 5. Pure No-Tools Completion (`-n / --no-tools`)
 If you want direct token streaming without tool execution:
 ```bash
 ai -n "explain quantum computing in 3 bullets"
 ```
----
 
 ## Configuration Cascade
 

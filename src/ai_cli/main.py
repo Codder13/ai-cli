@@ -16,9 +16,50 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 CONFIG_DIR = Path.home() / ".config" / "ai"
 CONFIG_FILE = CONFIG_DIR / "config.json"
+SESSION_MAX_MESSAGES = 20
+
+def get_session_file() -> Path:
+    """Return session history file path for the parent shell PID."""
+    ppid = os.getppid()
+    return Path(f"/tmp/ai_session_{ppid}.json")
+
+def load_session_history() -> list:
+    """Load conversation messages from current terminal session."""
+    session_file = get_session_file()
+    if session_file.is_file():
+        try:
+            with open(session_file, "r", encoding="utf-8") as f:
+                history = json.load(f)
+                return history[-SESSION_MAX_MESSAGES:]
+        except Exception:
+            pass
+    return []
+
+def save_session_history(messages: list) -> None:
+    """Save conversation messages to current terminal session."""
+    session_file = get_session_file()
+    try:
+        with open(session_file, "w", encoding="utf-8") as f:
+            # Persist user and assistant messages only to keep context clean
+            filtered = [
+                m for m in messages
+                if m.get("role") in ("user", "assistant") and m.get("content")
+            ]
+            json.dump(filtered[-SESSION_MAX_MESSAGES:], f)
+    except Exception:
+        pass
+
+def clear_session_history() -> None:
+    """Clear conversation history for the current terminal session."""
+    session_file = get_session_file()
+    if session_file.is_file():
+        try:
+            session_file.unlink(missing_ok=True)
+        except Exception:
+            pass
 
 TOOLS = [
     {
@@ -303,9 +344,12 @@ def run_agent_loop(
         "- When searching or retrieving information from the internet, ALWAYS use `search_web` (and `fetch_web_page` to read specific URLs).\n"
         "- Only use `bash` to fetch web content if the user explicitly asks to run a curl/bash/script command."
     )
+    history = load_session_history()
     messages = []
     sys_content = f"{base_instructions}\n\n{system_prompt}" if system_prompt else base_instructions
     messages.append({"role": "system", "content": sys_content})
+    if history:
+        messages.extend(history)
     messages.append({"role": "user", "content": user_content})
     for turn in range(max_turns):
         payload = {
@@ -344,6 +388,11 @@ def run_agent_loop(
             content = message.get("content", "")
             if content:
                 print(content)
+                # Persist updated session history
+                updated_history = list(history)
+                updated_history.append({"role": "user", "content": user_content})
+                updated_history.append({"role": "assistant", "content": content})
+                save_session_history(updated_history)
             break
 
         # Execute each requested tool call
@@ -445,11 +494,13 @@ def run_stream_completion(
     temperature: float = None,
 ) -> None:
     """Stream completions with sub-5ms latency and zero dependencies."""
+    history = load_session_history()
     messages = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
+    if history:
+        messages.extend(history)
     messages.append({"role": "user", "content": user_content})
-
     url = f"{base_url.rstrip('/')}/chat/completions"
     headers = {
         "Content-Type": "application/json",
@@ -470,6 +521,7 @@ def run_stream_completion(
         method="POST",
     )
 
+    full_response = []
     try:
         with urllib.request.urlopen(req) as response:
             for raw_line in response:
@@ -480,13 +532,18 @@ def run_stream_completion(
                         delta = chunk.get("choices", [{}])[0].get("delta", {})
                         content = delta.get("content", "")
                         if content:
+                            full_response.append(content)
                             print(content, end="", flush=True)
                     except json.JSONDecodeError:
                         continue
             print()
+            if full_response:
+                updated_history = list(history)
+                updated_history.append({"role": "user", "content": user_content})
+                updated_history.append({"role": "assistant", "content": "".join(full_response)})
+                save_session_history(updated_history)
     except KeyboardInterrupt:
         sys.exit(130)
-    except urllib.error.HTTPError as e:
         print(f"\n\033[31mAPI Error ({e.code}):\033[0m {e.read().decode('utf-8')}", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
@@ -581,6 +638,12 @@ def main() -> None:
         action="version",
         version=f"%(prog)s {__version__}",
     )
+    parser.add_argument(
+        "-C",
+        "--clear",
+        action="store_true",
+        help="Clear conversation memory for the current terminal session",
+    )
 
     args = parser.parse_args()
 
@@ -597,6 +660,10 @@ def main() -> None:
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(sample, f, indent=2)
         print(f"Created configuration file at {CONFIG_FILE}")
+        sys.exit(0)
+    if args.clear:
+        clear_session_history()
+        print("✨ Cleared conversation session memory.")
         sys.exit(0)
 
     # Ingest stdin if piped
