@@ -1,4 +1,4 @@
-name: Release & Build Binaries
+name: Release & Publish
 
 on:
   push:
@@ -6,18 +6,45 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write
+  id-token: write
+
 jobs:
-  build-and-release:
+  pypi-publish:
+    name: Build and Publish to PyPI (OIDC)
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/ai-stream-cli
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build tool
+        run: pip install --upgrade build
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  build-binaries:
+    name: Build Standalone Executables
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         include:
           - os: ubuntu-latest
             artifact_name: ai-linux-x86_64
-            asset_name: ai-linux-x86_64
           - os: macos-latest
             artifact_name: ai-macos-arm64
-            asset_name: ai-macos-arm64
 
     steps:
       - name: Checkout Code
@@ -28,13 +55,11 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install dependencies & PyInstaller
-        run: |
-          pip install --upgrade pip build pyinstaller rich hatchling
+      - name: Install PyInstaller & dependencies
+        run: pip install --upgrade pip pyinstaller rich hatchling
 
-      - name: Build Standalone Binary
-        run: |
-          pyinstaller --onefile --name ${{ matrix.artifact_name }} src/ai_cli/main.py
+      - name: Build Executable
+        run: pyinstaller --onefile --name ${{ matrix.artifact_name }} src/ai_cli/main.py
 
       - name: Upload Binary to GitHub Release
         uses: softprops/action-gh-release@v2
