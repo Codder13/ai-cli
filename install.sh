@@ -2,7 +2,7 @@
 set -e
 
 # Target binary path
-INSTALL_DIR="${HOME}/.local/bin"
+INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 TARGET="${INSTALL_DIR}/ai"
 
 echo "⚡ Installing ai-cli to ${TARGET}..."
