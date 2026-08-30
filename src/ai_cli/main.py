@@ -352,9 +352,12 @@ def run_agent_loop(
 ) -> None:
     """Run an agentic loop with bash, read_file, write_file, search_web, and fetch_web_page tools."""
     base_instructions = (
+        "You are a fast, lightweight terminal assistant. "
+        "Your primary job is to resolve simple requests quickly, accurately, and concisely.\n\n"
         "Tool Usage Policy:\n"
         "- When searching or retrieving information from the internet, ALWAYS use `search_web` (and `fetch_web_page` to read specific URLs).\n"
-        "- Only use `bash` to fetch web content if the user explicitly asks to run a curl/bash/script command."
+        "- Only use `bash` to fetch web content if the user explicitly asks to run a curl/bash/script command.\n"
+        "- Provide direct, clear answers without unnecessary fluff or excessive commentary."
     )
     history = load_session_history()
     messages = []
@@ -508,8 +511,12 @@ def run_stream_completion(
     """Stream completions with sub-5ms latency and zero dependencies."""
     history = load_session_history()
     messages = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
+    default_no_tool_system = (
+        "You are a fast, lightweight terminal assistant. "
+        "Your job is to resolve simple requests quickly, accurately, and concisely."
+    )
+    sys_content = f"{default_no_tool_system}\n\n{system_prompt}" if system_prompt else default_no_tool_system
+    messages.append({"role": "system", "content": sys_content})
     if history:
         messages.extend(history)
     messages.append({"role": "user", "content": user_content})
