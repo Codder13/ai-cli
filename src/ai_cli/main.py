@@ -25,7 +25,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "bash",
-            "description": "Execute a bash shell command.",
+            "description": "Execute a local shell command (e.g. tests, git, compilers, local processes). Do NOT use bash to curl or scrape the web unless the user explicitly requests a curl/shell command.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -69,7 +69,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "search_web",
-            "description": "Search the web for information, documentation, or news.",
+            "description": "Search the web for information, documentation, or news. Always use this tool when web information is needed.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -254,12 +254,16 @@ def run_agent_loop(
     max_turns: int = 15,
     auto_approve: bool = False,
 ) -> None:
-    """Run an agentic loop with bash, read_file, write_file, and web_search tools."""
+    """Run an agentic loop with bash, read_file, write_file, search_web, and fetch_web_page tools."""
+    base_instructions = (
+        "Tool Usage Policy:\n"
+        "- When searching or retrieving information from the internet, ALWAYS use `search_web` (and `fetch_web_page` to read specific URLs).\n"
+        "- Only use `bash` to fetch web content if the user explicitly asks to run a curl/bash/script command."
+    )
     messages = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
+    sys_content = f"{base_instructions}\n\n{system_prompt}" if system_prompt else base_instructions
+    messages.append({"role": "system", "content": sys_content})
     messages.append({"role": "user", "content": user_content})
-
     for turn in range(max_turns):
         payload = {
             "model": model,
