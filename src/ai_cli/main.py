@@ -234,8 +234,40 @@ def execute_write_file(path_str: str, content: str) -> str:
 
 
 def execute_web_search(query: str, max_results: int = 8) -> str:
-    """Search the web with automatic fallback across search engines without API keys."""
-    # 1. Primary: DuckDuckGo HTML POST with full browser headers
+    """Search the web with automatic multi-engine fallbacks (Startpage, DuckDuckGo, Bing)."""
+    # 1. Primary Engine: Startpage (Google-powered, unblocked, fast)
+    try:
+        url = "https://www.startpage.com/sp/search"
+        data = urllib.parse.urlencode({"query": query}).encode("utf-8")
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        }
+        req = urllib.request.Request(url, data=data, headers=headers)
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            page = resp.read().decode("utf-8", errors="ignore")
+
+        results = []
+        for m in re.finditer(
+            r"<a[^>]*class=[\x27\"][^\x27\"]*result-title[^\x27\"]*[\x27\"][^>]*href=[\x27\"]([^\x27\"]+)[\x27\"][^>]*>(.*?)</a>",
+            page,
+        ):
+            link = m.group(1)
+            raw_title = html.unescape(re.sub(r"<[^>]+>", "", m.group(2)).strip())
+            # Strip inline CSS if injected
+            title = re.sub(r"^[^{]+\{[^}]+\}", "", raw_title).strip()
+            if not title:
+                title = raw_title
+            results.append(f"- **Title:** {title}\n  **URL:** {link}")
+            if len(results) >= max_results:
+                break
+        if results:
+            return "\n\n".join(results)
+    except Exception:
+        pass
+
+    # 2. Secondary Engine: DuckDuckGo HTML POST
     try:
         url = "https://html.duckduckgo.com/html/"
         data = urllib.parse.urlencode({"q": query}).encode("utf-8")
@@ -248,7 +280,7 @@ def execute_web_search(query: str, max_results: int = 8) -> str:
             "Origin": "https://html.duckduckgo.com",
         }
         req = urllib.request.Request(url, data=data, headers=headers)
-        with urllib.request.urlopen(req, timeout=8) as resp:
+        with urllib.request.urlopen(req, timeout=6) as resp:
             page = resp.read().decode("utf-8", errors="ignore")
 
         results = []
@@ -262,52 +294,6 @@ def execute_web_search(query: str, max_results: int = 8) -> str:
             link = urllib.parse.unquote(u_match.group(1)) if u_match else raw_url
             snippet = html.unescape(re.sub(r"<[^>]+>", "", m.group(2)).strip())
             results.append(f"- **URL:** {link}\n  **Snippet:** {snippet}")
-            if len(results) >= max_results:
-                break
-        if results:
-            return "\n\n".join(results)
-    except Exception:
-        pass
-
-    # 2. Secondary Fallback: Bing Search
-    try:
-        import base64
-
-        url = "https://www.bing.com/search?q=" + urllib.parse.quote(query)
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0",
-            "Accept-Language": "en-US,en;q=0.9",
-        }
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            page = resp.read().decode("utf-8", errors="ignore")
-
-        results = []
-        blocks = page.split("<li class=\"b_algo\"")
-        for b in blocks[1:]:
-            h2_match = re.search(r"<h2[^>]*><a[^>]*href=\"([^\"]+)\"[^>]*>(.*?)</a></h2>", b, re.DOTALL)
-            if not h2_match:
-                continue
-            raw_url = html.unescape(h2_match.group(1))
-            title = html.unescape(re.sub(r"<[^>]+>", "", h2_match.group(2)).strip())
-
-            actual_url = raw_url
-            u_match = re.search(r"[?&]u=a1([a-zA-Z0-9_-]+)", raw_url)
-            if u_match:
-                try:
-                    padded = u_match.group(1) + "=" * ((4 - len(u_match.group(1)) % 4) % 4)
-                    padded = padded.replace("-", "+").replace("_", "/")
-                    actual_url = base64.b64decode(padded).decode("utf-8", errors="ignore")
-                except Exception:
-                    actual_url = raw_url
-
-            cap_match = re.search(r"<div class=\"b_caption\"[^>]*>(.*?)</div>", b, re.DOTALL)
-            snippet = ""
-            if cap_match:
-                snippet = html.unescape(re.sub(r"<[^>]+>", " ", cap_match.group(1)))
-                snippet = " ".join(snippet.split())
-
-            results.append(f"- **Title:** {title}\n  **URL:** {actual_url}\n  **Snippet:** {snippet}")
             if len(results) >= max_results:
                 break
         if results:
