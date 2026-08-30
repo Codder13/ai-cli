@@ -617,8 +617,8 @@ def main() -> None:
         description="Lightning-fast streaming AI CLI with zero external dependencies and agentic tool mode.",
         epilog=(
             "Examples:\n"
-            "  ai who is denis bolba\n"
             "  ai what is the biggest thing on the moon\n"
+            "  ai search the latest zig release and summarize changes\n"
             "  git diff | ai summarize changes in 3 bullets\n"
             "  ai inspect package.json and run the test script\n"
             "  ai -n 'Reply in haiku' explain rust (pure prompt mode, no tools)\n"

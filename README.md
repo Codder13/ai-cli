@@ -60,8 +60,7 @@ By default, `ai` runs as an autonomous agent equipped with 5 essential tools (`b
 
 ```bash
 # Autonomous research & web searching
-ai who is denis bolba
-
+ai search the latest zig release and summarize changes
 # Inspect local code & run commands
 ai inspect this git repository and list the top 3 largest python functions
 
@@ -73,12 +72,11 @@ ai -c "remove all temp and cache files in the current folder"
 `ai` automatically preserves conversation history within the same terminal tab/session (scoped by shell PID).
 
 ```bash
-❯ ai who is denis bolba
-# ... Researches and explains Denis Bolba ...
+❯ ai what is the largest file in this project
+# ... Inspects directory and lists the largest file ...
 
-❯ ai what sports did he play and where is he from
-# ... Remembers "he" refers to Denis Bolba from previous turn!
-
+❯ ai how can I optimize it
+# ... Remembers the file from the previous turn!
 # Clear conversation memory for the current tab:
 ❯ ai -C    # or ai --clear
 ```
