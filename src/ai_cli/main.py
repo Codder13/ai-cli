@@ -406,13 +406,21 @@ def main() -> None:
         "-a",
         "--agent",
         action="store_true",
-        help="Enable agent mode with tools (bash, read_file, write_file, web_search)",
+        help="Enable autonomous agent mode with tools (bash, read_file, write_file, web_search)",
+    )
+    parser.add_argument(
+        "-c",
+        "--confirm",
+        action="store_true",
+        default=None,
+        help="Require manual confirmation for each tool action (default: auto-executes unless set in config)",
     )
     parser.add_argument(
         "-y",
         "--yes",
         action="store_true",
-        help="Auto-approve all tool actions in agent mode",
+        default=None,
+        help="Bypass confirmation and auto-approve all tool actions",
     )
     parser.add_argument(
         "-m",
@@ -467,6 +475,7 @@ def main() -> None:
             "model": args.model,
             "system_prompt": "You are a concise, helpful terminal assistant.",
             "temperature": 0.7,
+            "require_approval": False,
         }
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(sample, f, indent=2)
@@ -494,6 +503,15 @@ def main() -> None:
         sys.exit(1)
 
     if args.agent:
+        # Determine approval policy: CLI flag overrides config, default is False (auto-approve)
+        require_approval = config.get("require_approval", False)
+        if args.confirm is True:
+            require_approval = True
+        elif args.yes is True:
+            require_approval = False
+
+        auto_approve = not require_approval
+
         run_agent_loop(
             base_url=args.base_url,
             api_key=args.api_key,
@@ -501,9 +519,8 @@ def main() -> None:
             user_content=user_content,
             system_prompt=args.system,
             temperature=args.temperature,
-            auto_approve=args.yes,
+            auto_approve=auto_approve,
         )
-    else:
         run_stream_completion(
             base_url=args.base_url,
             api_key=args.api_key,

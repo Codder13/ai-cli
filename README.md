@@ -56,17 +56,18 @@ ai generate a json array of 5 fruits > fruits.json
 ```
 
 ### 3. Pragmatic Agent Mode (`-a`)
-Run autonomous multi-step tasks using `bash`, `read_file`, `write_file`, and `web_search`:
+Run autonomous multi-step tasks using `bash`, `read_file`, `write_file`, and `web_search`.
+By default, actions execute automatically. You can enable manual confirmation per action with `-c / --confirm` or in your config.
 
 ```bash
-# Fix tests and code
-ai -a "run pytest and fix whatever test fails"
+# Autonomous task (executes actions automatically)
+ai -a "inspect this git repository and list the top 3 largest python functions"
 
 # Research and scaffold with live web search
 ai -a "search for the latest zig 0.14 build system changes and create a build.zig"
 
-# Auto-approve actions without prompting (-y)
-ai -a -y "find all .png files larger than 5MB and list their paths"
+# Require manual confirmation before each action (-c)
+ai -a -c "remove all temp and cache files in the current folder"
 ```
 
 ---
@@ -90,7 +91,8 @@ This generates `~/.config/ai/config.json`:
   "api_key": "your-api-key",
   "model": "gpt-4o-mini",
   "system_prompt": "You are a concise, helpful terminal assistant.",
-  "temperature": 0.7
+  "temperature": 0.7,
+  "require_approval": false
 }
 ```
 
@@ -99,14 +101,15 @@ This generates `~/.config/ai/config.json`:
 ## CLI Options
 
 ```text
-usage: ai [-h] [-a] [-y] [-m MODEL] [-u BASE_URL] [-k API_KEY] [-s SYSTEM]
+usage: ai [-h] [-a] [-c] [-y] [-m MODEL] [-u BASE_URL] [-k API_KEY] [-s SYSTEM]
           [-t TEMPERATURE] [--init-config] [-v]
           [prompt ...]
 
 options:
   prompt                User prompt or instruction
-  -a, --agent           Enable agent mode with tools (bash, read_file, write_file, web_search)
-  -y, --yes             Auto-approve all tool actions in agent mode
+  -a, --agent           Enable autonomous agent mode with tools (bash, read_file, write_file, web_search)
+  -c, --confirm         Require manual confirmation for each tool action
+  -y, --yes             Bypass confirmation and auto-approve all tool actions
   -m, --model MODEL     Model identifier (default: gemini-3.7-flash-high)
   -u, --base-url BASE   OpenAI-compatible API base URL
   -k, --api-key KEY     API authorization key
