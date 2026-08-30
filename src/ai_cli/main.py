@@ -181,49 +181,88 @@ def execute_write_file(path_str: str, content: str) -> str:
 
 
 def execute_web_search(query: str, max_results: int = 8) -> str:
-    """Search DuckDuckGo Lite without external dependencies or API keys."""
-    url = "https://lite.duckduckgo.com/lite/"
-    data = urllib.parse.urlencode({"q": query}).encode("utf-8")
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Referer": "https://lite.duckduckgo.com/",
-    }
-    req = urllib.request.Request(url, data=data, headers=headers)
+    """Search the web with automatic fallback across search engines without API keys."""
+    # 1. Primary: DuckDuckGo HTML POST with full browser headers
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        url = "https://html.duckduckgo.com/html/"
+        data = urllib.parse.urlencode({"q": query}).encode("utf-8")
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Referer": "https://html.duckduckgo.com/",
+            "Origin": "https://html.duckduckgo.com",
+        }
+        req = urllib.request.Request(url, data=data, headers=headers)
+        with urllib.request.urlopen(req, timeout=8) as resp:
             page = resp.read().decode("utf-8", errors="ignore")
 
         results = []
-        link_matches = list(
-            re.finditer(
-                r"<a[^>]*href=\"([^\"]+)\"[^>]*class=[\x27\"]result-link[\x27\"][^>]*>(.*?)</a>",
-                page,
-                re.DOTALL,
-            )
-        )
-        snippet_matches = list(
-            re.finditer(
-                r"<td[^>]*class=[\x27\"]result-snippet[\x27\"][^>]*>(.*?)</td>",
-                page,
-                re.DOTALL,
-            )
-        )
-
-        for lm, sm in zip(link_matches, snippet_matches):
-            raw_url = lm.group(1)
-            url_match = re.search(r"uddg=([^&]+)", raw_url)
-            link = urllib.parse.unquote(url_match.group(1)) if url_match else raw_url
-            title = html.unescape(re.sub(r"<[^>]+>", "", lm.group(2)).strip())
-            snippet = html.unescape(re.sub(r"<[^>]+>", "", sm.group(1)).strip())
-            results.append(f"- **Title:** {title}\n  **URL:** {link}\n  **Snippet:** {snippet}")
+        for m in re.finditer(
+            r"<a[^>]*class=\"result__snippet[^\"]*\"[^>]*href=\"([^\"]+)\"[^>]*>(.*?)</a>",
+            page,
+            re.DOTALL,
+        ):
+            raw_url = m.group(1)
+            u_match = re.search(r"uddg=([^&]+)", raw_url)
+            link = urllib.parse.unquote(u_match.group(1)) if u_match else raw_url
+            snippet = html.unescape(re.sub(r"<[^>]+>", "", m.group(2)).strip())
+            results.append(f"- **URL:** {link}\n  **Snippet:** {snippet}")
             if len(results) >= max_results:
                 break
+        if results:
+            return "\n\n".join(results)
+    except Exception:
+        pass
 
-        return "\n\n".join(results) if results else "No results found."
-    except Exception as e:
-        return f"[Web Search Error: {e}]"
+    # 2. Secondary Fallback: Bing Search
+    try:
+        import base64
 
+        url = "https://www.bing.com/search?q=" + urllib.parse.quote(query)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            page = resp.read().decode("utf-8", errors="ignore")
+
+        results = []
+        blocks = page.split("<li class=\"b_algo\"")
+        for b in blocks[1:]:
+            h2_match = re.search(r"<h2[^>]*><a[^>]*href=\"([^\"]+)\"[^>]*>(.*?)</a></h2>", b, re.DOTALL)
+            if not h2_match:
+                continue
+            raw_url = html.unescape(h2_match.group(1))
+            title = html.unescape(re.sub(r"<[^>]+>", "", h2_match.group(2)).strip())
+
+            actual_url = raw_url
+            u_match = re.search(r"[?&]u=a1([a-zA-Z0-9_-]+)", raw_url)
+            if u_match:
+                try:
+                    padded = u_match.group(1) + "=" * ((4 - len(u_match.group(1)) % 4) % 4)
+                    padded = padded.replace("-", "+").replace("_", "/")
+                    actual_url = base64.b64decode(padded).decode("utf-8", errors="ignore")
+                except Exception:
+                    actual_url = raw_url
+
+            cap_match = re.search(r"<div class=\"b_caption\"[^>]*>(.*?)</div>", b, re.DOTALL)
+            snippet = ""
+            if cap_match:
+                snippet = html.unescape(re.sub(r"<[^>]+>", " ", cap_match.group(1)))
+                snippet = " ".join(snippet.split())
+
+            results.append(f"- **Title:** {title}\n  **URL:** {actual_url}\n  **Snippet:** {snippet}")
+            if len(results) >= max_results:
+                break
+        if results:
+            return "\n\n".join(results)
+    except Exception:
+        pass
+
+    return "No results found."
 
 def execute_fetch_web_page(url_str: str, max_chars: int = 4000) -> str:
     """Fetch clean, readable text from a web page URL."""
