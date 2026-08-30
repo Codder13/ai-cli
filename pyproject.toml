@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ai-stream-cli"
+version = "0.1.0"
+description = "⚡ Zero-dependency, ultra-fast streaming AI CLI for Unix pipelines"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "Denis (Codder13)", email = "codder13@users.noreply.github.com" }]
+keywords = ["ai", "cli", "openai", "streaming", "llm", "terminal", "unix-pipeline"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Environment :: Console",
+    "Topic :: Utilities",
+]
+
+[project.scripts]
+ai = "ai_cli.main:main"
+
+[project.urls]
+Homepage = "https://github.com/Codder13/ai-cli"
+Repository = "https://github.com/Codder13/ai-cli.git"
+Issues = "https://github.com/Codder13/ai-cli/issues"
