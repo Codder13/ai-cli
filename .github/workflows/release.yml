@@ -1,0 +1,45 @@
+name: Release & Build Binaries
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-and-release:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: ai-linux-x86_64
+            asset_name: ai-linux-x86_64
+          - os: macos-latest
+            artifact_name: ai-macos-arm64
+            asset_name: ai-macos-arm64
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies & PyInstaller
+        run: |
+          pip install --upgrade pip build pyinstaller rich hatchling
+
+      - name: Build Standalone Binary
+        run: |
+          pyinstaller --onefile --name ${{ matrix.artifact_name }} src/ai_cli/main.py
+
+      - name: Upload Binary to GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: dist/${{ matrix.artifact_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
