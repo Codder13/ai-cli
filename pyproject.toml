@@ -7,9 +7,10 @@ name = "ai-stream-cli"
 version = "0.6.0"
 description = "⚡ Zero-dependency, ultra-fast streaming AI CLI for Unix pipelines"
 readme = "README.md"
-requires-python = ">=3.8"
+dependencies = [
+    "rich>=13.0.0",
+]
 license = { text = "MIT" }
-authors = [{ name = "Denis (Codder13)", email = "codder13@users.noreply.github.com" }]
 keywords = ["ai", "cli", "openai", "streaming", "llm", "terminal", "unix-pipeline"]
 classifiers = [
     "Programming Language :: Python :: 3",
