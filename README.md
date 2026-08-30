@@ -1,57 +1,85 @@
-# ⚡ ai-cli
+# ai-cli
 
-> **Zero-dependency, ultra-fast streaming AI CLI for Unix pipelines.**  
-> Works with any OpenAI-compatible API (OpenAI, Groq, Ollama, vLLM, OpenRouter, Together AI).
+> **Zero-dependency, sub-5ms streaming AI CLI & autonomous agent for Unix terminals and pipelines.**
 
-```bash
-$ ai what is the biggest thing on the moon
-$ git diff | ai summarize these changes in 3 bullet points
-```
+Compatible with any OpenAI-compatible provider: **Ollama, vLLM, LM Studio, Groq, OpenRouter, Together AI, OpenAI, and AGM / OMP**.
 
 ---
 
-## ✨ Why `ai-cli`?
+## Why `ai-cli`?
 
-Most terminal AI clients (`sgpt`, `llm`, `open-interpreter`) pull in dozens of heavy dependencies (`pydantic`, `rich`, `requests`, `openai`), resulting in **200ms–500ms of startup latency** before sending a single byte.
+Most AI command-line tools (`sgpt`, `llm`, `open-interpreter`) pull in dozens of heavy Python packages (`requests`, `pydantic`, `rich`, `openai`), resulting in **200ms–400ms startup latency** before sending a single byte over the network.
 
-* **⚡ Sub-5ms startup latency** — Zero external dependencies. Uses 100% Python standard library (`urllib`, `json`, `argparse`).
-* **🌊 Instant live streaming** — Streams response tokens to stdout in real-time.
-* **🔌 Native Unix pipeline integration** — Cleanly accepts piped `stdin` combined with positional prompt instructions.
-* **🛡️ Bulletproof & Maintenance-free** — No virtualenvs required, no site-packages breakages on rolling-release Python updates.
-* **⚙️ Universal Compatibility** — Works with any OpenAI-compatible API endpoint.
+`ai-cli` is written in **100% pure Python standard library**:
+- ⚡ **Sub-5ms startup latency** — starts and begins streaming instantly.
+- 🪶 **Zero dependencies** — no `pip` virtual environment breaks, no C-extension issues.
+- 🚰 **Pure Unix pipeline design** — seamlessly handles `stdin`, arguments, and pipes clean text for `grep`, `sed`, or redirection.
+- 🤖 **Pragmatic Agent Mode (`-a`)** — equipped with 4 essential tools (`bash`, `read_file`, `write_file`, `web_search`) with human-in-the-loop approvals.
+- 🌐 **Built-in DuckDuckGo Web Search** — live web research without needing API keys.
 
 ---
 
-## 🚀 Quick Install
+## Installation
 
-### 1-Line Install (Recommended)
+### 1. One-Line Install (Recommended)
+
 ```bash
 curl -sSL https://raw.githubusercontent.com/Codder13/ai-cli/main/install.sh | bash
 ```
 
-### Or clone and link:
+### 2. Manual / Git Clone
+
 ```bash
-git clone https://github.com/Codder13/ai-cli.git ~/Projects/ai-cli
-ln -sf ~/Projects/ai-cli/src/ai_cli/main.py ~/.local/bin/ai
+git clone https://github.com/Codder13/ai-cli.git
+ln -sf $(pwd)/ai-cli/src/ai_cli/main.py ~/.local/bin/ai
 ```
 
 ---
 
-## ⚙️ Configuration
+## Usage
 
-`ai-cli` checks settings in the following order:
-**CLI Flags** $\to$ **Environment Variables** $\to$ **`~/.config/ai/config.json`**.
-
-### Environment Variables
-Add to your `~/.bashrc` or `~/.zshrc`:
-
+### 1. Instant Streaming Prompt
 ```bash
-export AI_BASE_URL="https://api.openai.com/v1"  # Or your Ollama/vLLM/OpenRouter URL
-export AI_API_KEY="sk-..."
-export AI_MODEL="gpt-4o-mini"
+ai what is the biggest thing on the moon
 ```
 
-### Or create a config file:
+### 2. Unix Pipelines & Stdin
+```bash
+# Summarize git changes
+git diff | ai summarize these changes in 3 bullet points
+
+# Explain log errors
+cat /var/log/nginx/error.log | tail -n 20 | ai explain these errors
+
+# Pipe output cleanly to file
+ai generate a json array of 5 fruits > fruits.json
+```
+
+### 3. Pragmatic Agent Mode (`-a`)
+Run autonomous multi-step tasks using `bash`, `read_file`, `write_file`, and `web_search`:
+
+```bash
+# Fix tests and code
+ai -a "run pytest and fix whatever test fails"
+
+# Research and scaffold with live web search
+ai -a "search for the latest zig 0.14 build system changes and create a build.zig"
+
+# Auto-approve actions without prompting (-y)
+ai -a -y "find all .png files larger than 5MB and list their paths"
+```
+
+---
+
+## Configuration Cascade
+
+`ai-cli` looks for credentials in the following order:
+1. **CLI Flags**: `-m`, `-u`, `-k`, `-s`
+2. **Environment Variables**: `AI_MODEL`, `AI_BASE_URL`, `AI_API_KEY`
+3. **Config File**: `~/.config/ai/config.json`
+4. **OMP / AGM Config**: `~/.omp/agent/models.yml` (auto-detected)
+
+### Initialize a config template:
 ```bash
 ai --init-config
 ```
@@ -59,44 +87,37 @@ This generates `~/.config/ai/config.json`:
 ```json
 {
   "base_url": "https://api.openai.com/v1",
-  "api_key": "sk-...",
+  "api_key": "your-api-key",
   "model": "gpt-4o-mini",
-  "system_prompt": "",
+  "system_prompt": "You are a concise, helpful terminal assistant.",
   "temperature": 0.7
 }
 ```
 
 ---
 
-## 💡 Usage Examples
+## CLI Options
 
-### 1. Direct unquoted prompts
-```bash
-ai explain the difference between processes and threads
-```
+```text
+usage: ai [-h] [-a] [-y] [-m MODEL] [-u BASE_URL] [-k API_KEY] [-s SYSTEM]
+          [-t TEMPERATURE] [--init-config] [-v]
+          [prompt ...]
 
-### 2. Piped Input + Instructions
-```bash
-# Summarize git changes
-git diff | ai summarize these changes in 3 bullet points
-
-# Debug error logs
-cat /var/log/nginx/error.log | tail -n 20 | ai explain what is causing this 502
-
-# Format JSON / code
-curl -s https://api.sample.com/data | ai convert this to a clean TypeScript interface
-```
-
-### 3. CLI Overrides on the fly
-```bash
-# Switch models for a single prompt
-ai -m claude-3-5-sonnet "write a regex for validating IPv6 addresses"
-
-# Add a system persona / constraint
-ai -s "You are a senior Linux kernel engineer. Answer concisely." what is eBPF
+options:
+  prompt                User prompt or instruction
+  -a, --agent           Enable agent mode with tools (bash, read_file, write_file, web_search)
+  -y, --yes             Auto-approve all tool actions in agent mode
+  -m, --model MODEL     Model identifier (default: gemini-3.7-flash-high)
+  -u, --base-url BASE   OpenAI-compatible API base URL
+  -k, --api-key KEY     API authorization key
+  -s, --system SYSTEM   Custom system prompt
+  -t, --temperature T   Sampling temperature (0.0 - 2.0)
+  --init-config         Create default config template at ~/.config/ai/config.json
+  -v, --version         Show version
 ```
 
 ---
 
-## 📄 License
+## License
+
 [MIT](LICENSE)
