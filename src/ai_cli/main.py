@@ -24,14 +24,14 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "web_search",
-            "description": "Perform an internet search to find documentation, release dates, current news, error solutions, API references, or facts. Always use this instead of running curl/wget scripts.",
+            "name": "bash",
+            "description": "Execute a bash shell command.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "The search query (e.g. 'Arch Linux latest release date', 'Zig 0.14 build system changes')"}
+                    "command": {"type": "string", "description": "The shell command to run"}
                 },
-                "required": ["query"],
+                "required": ["command"],
             },
         },
     },
@@ -39,12 +39,12 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "Read file contents cleanly from disk without shell escaping issues.",
+            "description": "Read file contents from disk.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "Relative or absolute path to the file"},
-                    "limit": {"type": "integer", "description": "Optional max number of lines to read"},
+                    "path": {"type": "string", "description": "Path to the file"},
+                    "limit": {"type": "integer", "description": "Max number of lines to read"},
                 },
                 "required": ["path"],
             },
@@ -54,12 +54,12 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "write_file",
-            "description": "Create a new file or overwrite an existing file with exact content.",
+            "description": "Write or overwrite file contents.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "Target file path"},
-                    "content": {"type": "string", "description": "Full file text content"},
+                    "path": {"type": "string", "description": "Path to the file"},
+                    "content": {"type": "string", "description": "Content to write"},
                 },
                 "required": ["path", "content"],
             },
@@ -68,14 +68,14 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "bash",
-            "description": "Execute local shell commands on the system (e.g. compilers, git, package managers, tests, processes). Do not use for web scraping or search.",
+            "name": "web_search",
+            "description": "Search the web.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "command": {"type": "string", "description": "The shell command to execute"}
+                    "query": {"type": "string", "description": "Search query"}
                 },
-                "required": ["command"],
+                "required": ["query"],
             },
         },
     },
@@ -206,22 +206,10 @@ def run_agent_loop(
     auto_approve: bool = False,
 ) -> None:
     """Run an agentic loop with bash, read_file, write_file, and web_search tools."""
-    default_agent_system = (
-        "You are an expert autonomous AI terminal agent. "
-        "You have access to 4 specialized tools: `web_search`, `read_file`, `write_file`, and `bash`.\n\n"
-        "Tool Guidelines:\n"
-        "1. Whenever you need external information, current release dates, live documentation, or web research, "
-        "ALWAYS use the `web_search` tool instead of manually running curl/wget scraping scripts in `bash`.\n"
-        "2. Use `read_file` and `write_file` for clean, safe file operations instead of complex shell cat/sed heredocs.\n"
-        "3. Use `bash` for system commands, tests, compilers, git, and local shell execution.\n"
-        "4. Work iteratively to inspect, solve, and verify tasks before providing a concise final response."
-    )
-    sys_content = f"{default_agent_system}\n\n{system_prompt}" if system_prompt else default_agent_system
-
-    messages = [
-        {"role": "system", "content": sys_content},
-        {"role": "user", "content": user_content},
-    ]
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": user_content})
 
     for turn in range(max_turns):
         payload = {
