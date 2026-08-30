@@ -10,13 +10,14 @@ import json
 import os
 import re
 import subprocess
+import shutil
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 CONFIG_DIR = Path.home() / ".config" / "ai"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 SESSION_MAX_MESSAGES = 20
@@ -236,16 +237,36 @@ def load_config() -> dict:
     return config
 
 
-def execute_bash(command: str, max_chars: int = 12000) -> str:
-    """Execute command in bash and return combined stdout/stderr."""
+def execute_bash(command: str, max_chars: int = 12000, sandbox: bool = True) -> str:
+    """Execute command in bash (optionally sandboxed via bwrap) and return combined stdout/stderr."""
+    bwrap_path = shutil.which("bwrap")
+    use_sandbox = sandbox and bool(bwrap_path)
+
+    if use_sandbox:
+        pwd = os.getcwd()
+        home = os.path.expanduser("~")
+        cmd_args = [
+            bwrap_path,
+            "--ro-bind", "/", "/",
+            "--dev", "/dev",
+            "--proc", "/proc",
+            "--tmpfs", "/tmp",
+            "--tmpfs", f"{home}/.ssh",
+            "--tmpfs", f"{home}/.gnupg",
+            "--bind", pwd, pwd,
+            "--share-net",
+            "--",
+            "/bin/bash", "-c", command,
+        ]
+    else:
+        cmd_args = ["/bin/bash", "-c", command]
+
     try:
         res = subprocess.run(
-            command,
-            shell=True,
+            cmd_args,
             capture_output=True,
             text=True,
             timeout=60,
-            executable="/bin/bash",
         )
         out = res.stdout + res.stderr
         if not out.strip():
@@ -388,6 +409,7 @@ def run_agent_loop(
     temperature: float = None,
     max_turns: int = 15,
     auto_approve: bool = False,
+    sandbox: bool = True,
 ) -> None:
     """Run an agentic loop with bash, read_file, write_file, search_web, and fetch_web_page tools."""
     base_instructions = (
@@ -476,7 +498,7 @@ def run_agent_loop(
                     elif ans == "n":
                         messages.append({"role": "tool", "tool_call_id": tool_id, "content": "[Command rejected by user]"})
                         continue
-                output = execute_bash(cmd)
+                output = execute_bash(cmd, sandbox=sandbox)
                 lines = output.strip().split("\n")
                 preview = "\n".join(lines[:6]) + (f"\n... ({len(lines)-6} more lines)" if len(lines) > 6 else "")
                 print(f"\033[90m{preview}\033[0m")
@@ -649,6 +671,12 @@ def main() -> None:
         help="Bypass confirmation and auto-approve all tool actions",
     )
     parser.add_argument(
+        "-s",
+        "--no-sandbox",
+        action="store_true",
+        help="Disable Bubblewrap sandbox and run commands directly on the host",
+    )
+    parser.add_argument(
         "-m",
         "--model",
         default=os.getenv("AI_MODEL", config.get("model", "gemini-3.7-flash-high")),
@@ -667,7 +695,6 @@ def main() -> None:
         help="API authorization key",
     )
     parser.add_argument(
-        "-s",
         "--system",
         default=config.get("system_prompt"),
         help="Custom system prompt",
@@ -757,6 +784,15 @@ def main() -> None:
         parser.print_help(sys.stderr)
         sys.exit(1)
 
+    # Resolve approval preference
+    require_approval = config.get("require_approval", False)
+    auto_approve = True
+    if args.confirm:
+        auto_approve = False
+    elif args.yes:
+        auto_approve = True
+    elif require_approval:
+        auto_approve = False
     if args.no_tools:
         run_stream_completion(
             base_url=args.base_url,
@@ -767,14 +803,7 @@ def main() -> None:
             temperature=args.temperature,
         )
     else:
-        # Agent mode is default
-        require_approval = config.get("require_approval", False)
-        if args.confirm is True:
-            require_approval = True
-        elif args.yes is True:
-            require_approval = False
-
-        auto_approve = not require_approval
+        use_sandbox = not args.no_sandbox and config.get("sandbox", True)
         try:
             run_agent_loop(
                 base_url=args.base_url,
@@ -785,6 +814,7 @@ def main() -> None:
                 temperature=args.temperature,
                 max_turns=args.max_turns,
                 auto_approve=auto_approve,
+                sandbox=use_sandbox,
             )
         except KeyboardInterrupt:
             print("\nAborted.")

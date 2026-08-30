@@ -110,7 +110,20 @@ When a simple task evolves into a large-scale refactor, codebase overhaul, or mu
 # Supported harnesses: omp, claude, codex, pi
 ```
 
-### 6. Interactive Tool Approvals (`-c / --confirm`)
+### 6. Sandbox Security (`-s / --no-sandbox`)
+By default, all command executions are sandboxed inside Linux **Bubblewrap (`bwrap`)**:
+* 🔒 **Read-Only System**: Root (`/`), `/etc`, `/usr`, and system directories cannot be modified.
+* 🔒 **Isolated Secrets**: `~/.ssh`, `~/.gnupg`, and `~/.aws` are masked with empty filesystems.
+* 📁 **Writable PWD**: Only the current working directory is writable.
+
+To disable the sandbox and execute commands directly on the host:
+```bash
+ai -s "install package with pacman"
+# or
+ai --no-sandbox "systemctl restart my-service"
+```
+
+### 7. Interactive Tool Approvals (`-c / --confirm`)
 By default, `ai` executes safe tools autonomously. If you prefer human-in-the-loop confirmation before each action:
 
 ```bash
