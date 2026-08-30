@@ -26,3 +26,13 @@ ai = "ai_cli.main:main"
 Homepage = "https://github.com/Codder13/ai-cli"
 Repository = "https://github.com/Codder13/ai-cli.git"
 Issues = "https://github.com/Codder13/ai-cli/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ai_cli"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/README.md",
+    "/LICENSE",
+]
