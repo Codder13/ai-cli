@@ -32,18 +32,15 @@ curl -sSL https://raw.githubusercontent.com/Codder13/ai-cli/main/install.sh | ba
 ### 2. Manual / Git Clone
 
 ```bash
-git clone https://github.com/Codder13/ai-cli.git ~/Projects/ai-cli
-ln -sf ~/Projects/ai-cli/src/ai_cli/main.py ~/.local/bin/ai
-```
+# 1. Recommended: Install via pipx (isolated global CLI)
+pipx install ai-flow-cli
 
-### 3. Dependencies
-Requires Python 3.8+ and `rich` for terminal markdown formatting:
-```bash
-pip install rich
-# or on Arch Linux:
-sudo pacman -S python-rich
-```
+# 2. Install via uv
+uv tool install ai-flow-cli
 
+# 3. Fast one-liner install script
+curl -sSL https://raw.githubusercontent.com/Codder13/ai-cli/main/install.sh | bash
+```
 ---
 
 ## 🛠️ Usage
