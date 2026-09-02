@@ -16,8 +16,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
-
-__version__ = "0.8.0"
+__version__ = "0.8.1"
 CONFIG_DIR = Path.home() / ".config" / "ai"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 SESSION_MAX_MESSAGES = 20
@@ -561,6 +560,17 @@ def run_agent_loop(
                 messages.append({"role": "tool", "tool_call_id": tool_id, "content": output})
             else:
                 messages.append({"role": "tool", "tool_call_id": tool_id, "content": f"[Unknown tool: {fname}]"})
+    else:
+        # Loop finished without breaking: max_turns was exhausted
+        print(f"\n\033[33m⚠️ Agent reached maximum tool turns ({max_turns}).\033[0m")
+        # If the last message had content or thought, extract and print it
+        last_content = messages[-1].get("content") if messages else ""
+        if not last_content:
+            last_content = f"[Task incomplete: agent reached max tool turns ({max_turns})]"
+        updated_history = list(history)
+        updated_history.append({"role": "user", "content": user_content})
+        updated_history.append({"role": "assistant", "content": last_content})
+        save_session_history(updated_history)
 
 def run_stream_completion(
     base_url: str,
