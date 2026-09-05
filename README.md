@@ -1,24 +1,18 @@
 # ai-cli
 
-> **Sub-5ms streaming AI assistant & autonomous agent for Unix terminals with Rich markdown rendering and session memory.**
+> **Lightweight, fast terminal AI wrapper around `omp` harness with Rich markdown rendering.**
 
-Compatible with any OpenAI-compatible provider: **Ollama, vLLM, LM Studio, Groq, OpenRouter, Together AI, OpenAI, and Antigravity / OMP**.
+Powered by `omp` (`omp -p --no-session`).
 
 ---
 
-## ⚡ Why `ai-cli`?
+## ⚡ Features
 
-Most AI command-line tools (`sgpt`, `llm`, `open-interpreter`) pull in dozens of heavy Python packages (`requests`, `pydantic`, `openai`, `click`), resulting in **200ms–400ms startup latency** before sending a single byte over the network.
-
-`ai-cli` is engineered for speed, minimalism, and true Unix ergonomics:
-- ⚡ **Instant Startup (< 5ms)** — starts and begins execution immediately.
-- 🤖 **Autonomous Agent Mode (Default)** — equipped with 5 essential tools (`bash`, `read_file`, `write_file`, `search_web`, `fetch_web_page`).
-- 🎨 **Rich Terminal Markdown** — syntax-highlighted code blocks, auto-aligned tables, blockquotes, and task checkboxes rendered cleanly in your terminal.
-- 🧠 **Per-Terminal Session Memory** — preserves conversation context automatically within the same terminal tab/session (scoped by shell Process ID).
-- 🌐 **Zero-Key Web Search** — live Google/Startpage + DuckDuckGo search integration without requiring third-party search API keys.
-- 🚀 **Heavy Harness Handoff (`-H`)** — hand off active conversation context to `omp`, `claude`, `codex`, or `pi` when a task outgrows a lightweight CLI.
-- 🚰 **Pure Unix Pipelines** — seamlessly handles `stdin`, trailing instructions, and outputs clean raw text when piped to files or other CLI tools.
-
+- 🚀 **Powered by `omp`** — harness power without config bloat.
+- 🎨 **Rich Terminal Markdown** — renders clean markdown, tables, and highlighted blocks on interactive terminals.
+- 💬 **No Quotes Required** — run `ai what is the biggest object on earth` directly.
+- 🚰 **Pure Unix Pipelines** — stdin context injection and clean raw text when piped.
+- 🛠️ **Tools On Demand** — pass `--tools` when agentic filesystem/system actions needed.
 ---
 
 ## 📦 Installation

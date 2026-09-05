@@ -5,13 +5,13 @@ build-backend = "hatchling.build"
 [project]
 name = "ai-flow-cli"
 version = "0.8.1"
-description = "⚡ Zero-dependency, ultra-fast streaming AI CLI for Unix pipelines"
+description = "⚡ Fast, beautiful AI CLI wrapper around omp harness for Unix pipelines"
 readme = "README.md"
 dependencies = [
     "rich>=13.0.0",
 ]
 license = { text = "MIT" }
-keywords = ["ai", "cli", "openai", "streaming", "llm", "terminal", "unix-pipeline"]
+keywords = ["ai", "cli", "omp", "streaming", "llm", "terminal", "unix-pipeline"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
