@@ -2,7 +2,6 @@
 """ai-cli: Fast CLI wrapper around omp for everyday queries and Unix pipelines."""
 
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -15,7 +14,21 @@ try:
     HAS_RICH = True
 except ImportError:
     HAS_RICH = False
-
+try:
+    from ai_cli.latex_render import (
+        render_mixed_markdown_with_math,
+        sanitize_inline_math,
+    )
+except ImportError:
+    # Resolve symlink to real path of main.py, then add parent of ai_cli (src) to sys.path
+    real_script = os.path.realpath(__file__)
+    src_dir = os.path.dirname(os.path.dirname(real_script))
+    if src_dir not in sys.path:
+        sys.path.insert(0, src_dir)
+    from ai_cli.latex_render import (
+        render_mixed_markdown_with_math,
+        sanitize_inline_math,
+    )
 
 def print_help() -> None:
     help_text = """ai - Fast terminal AI powered by omp
@@ -29,148 +42,47 @@ Usage:
   ai --tools <prompt>              Run with tool execution enabled
   ai --model <name> <prompt>       Specify model for omp
 
+Features:
+  - Powered by omp harness (omp -p --no-session)
+  - Rich terminal markdown rendering with code syntax highlighting
+  - Pure PDF/LaTeX math rendering in supported terminals (Kitty graphics)
+  - Clean Unicode unit conversion (e.g. ~21,196 km, ~200 km²)
+  - Unix pipeline friendly (clean stdout passthrough when piped)
+
 Examples:
   ai what is the biggest object on earth
+  ai show me the quadratic formula
   git diff | ai review these changes
   cat server.log | ai find error root cause
 """
     print(help_text)
 
 
-def convert_latex_math(text: str) -> str:
-    """Convert LaTeX math syntax emitted by models to readable Unicode/Markdown for terminals."""
-    # 1. Protect code blocks (fenced ``` and inline `)
-    code_tokens = []
-
-    def save_code(m: re.Match) -> str:
-        code_tokens.append(m.group(0))
-        return f"__CODE_TOKEN_{len(code_tokens) - 1}__"
-
-    text = re.sub(r"(```[\s\S]*?```|`[^`\n]+`)", save_code, text)
-
-    # 2. Math replacer
-    def format_math(m: re.Match) -> str:
-        s = m.group(1).strip()
-
-        # LaTeX en-dash / hyphens inside math
-        s = s.replace(r"\text{--}", "–").replace("--", "–")
-
-        # Superscripts: ^2, ^3, ^{10}, etc. before removing braces
-        sup_map = {
-            "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴",
-            "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹",
-            "+": "⁺", "-": "⁻", "=": "⁼", "(": "⁽", ")": "⁾",
-            "n": "ⁿ", "i": "ⁱ", "x": "ˣ"
-        }
-
-        def rep_sup(sm: re.Match) -> str:
-            val = sm.group(1) or sm.group(2)
-            if all(c in sup_map for c in val):
-                return "".join(sup_map[c] for c in val)
-            return "^" + val
-
-        s = re.sub(r"\^\{([0-9+\-=()nix]+)\}", rep_sup, s)
-        s = re.sub(r"\^([0-9nix])", rep_sup, s)
-
-        # Subscripts: _2, _{10}
-        sub_map = {
-            "0": "₀", "1": "₁", "2": "₂", "3": "₃", "4": "₄",
-            "5": "₅", "6": "₆", "7": "₇", "8": "₈", "9": "₉",
-            "+": "₊", "-": "₋", "=": "₌", "(": "₍", ")": "₎",
-            "a": "ₐ", "e": "ₑ", "o": "ₒ", "x": "ₓ", "h": "ₕ",
-            "k": "ₖ", "l": "ₗ", "m": "ₘ", "n": "ₙ", "p": "ₚ",
-            "s": "ₛ", "t": "ₜ"
-        }
-
-        def rep_sub(sm: re.Match) -> str:
-            val = sm.group(1) or sm.group(2)
-            if all(c in sub_map for c in val):
-                return "".join(sub_map[c] for c in val)
-            return "_" + val
-
-        s = re.sub(r"_\{([0-9+\-=()aeoxhklmnpst]+)\}", rep_sub, s)
-        s = re.sub(r"_([0-9aeoxhklmnpst])", rep_sub, s)
-
-        # Text wrappers inside math: \text{ km} -> km
-        s = re.sub(r"\\(?:text|mathrm|mathbf|mathit)\{([^}]*)\}", lambda tm: " " + tm.group(1).strip(), s)
-
-        # Symbols to unicode
-        symbols = [
-            (r"\sim", "~"),
-            (r"\approx", "≈"),
-            (r"\times", "×"),
-            (r"\pm", "±"),
-            (r"\mp", "∓"),
-            (r"\cdot", "·"),
-            (r"\leq", "≤"),
-            (r"\le", "≤"),
-            (r"\geq", "≥"),
-            (r"\ge", "≥"),
-            (r"\neq", "≠"),
-            (r"\ne", "≠"),
-            (r"\infty", "∞"),
-            (r"\degree", "°"),
-            (r"\circ", "°"),
-            (r"\alpha", "α"),
-            (r"\beta", "β"),
-            (r"\gamma", "γ"),
-            (r"\delta", "δ"),
-            (r"\pi", "π"),
-            (r"\theta", "θ"),
-            (r"\mu", "μ"),
-            (r"\sigma", "σ"),
-            (r"\Omega", "Ω"),
-        ]
-        for sym, rep in symbols:
-            s = re.sub(re.escape(sym) + r"(?![a-zA-Z])", rep, s)
-
-        # Thousands separator {,} -> ,
-        s = s.replace("{,}", ",")
-
-        # Fractions \frac{a}{b} -> (a/b)
-        s = re.sub(r"\\frac\{([^}]+)\}\{([^}]+)\}", r"(\1/\2)", s)
-
-        # Remove remaining lone braces and backslashes
-        s = re.sub(r"[{}]", "", s)
-        s = re.sub(r"\\([a-zA-Z]+)", r"\1", s)
-
-        # Clean spaces
-        s = re.sub(r"\s+", " ", s).strip()
-        s = re.sub(r"~\s*", "~", s)
-        s = re.sub(r"\s*–\s*", "–", s)
-        return s
-
-    # Convert display math $$...$$ and inline math $...$
-    text = re.sub(r"\$\$([\s\S]*?)\$\$", format_math, text)
-    text = re.sub(r"\$([^\$\n]+)\$", format_math, text)
-
-    # Restore code blocks
-    for idx, code in enumerate(code_tokens):
-        text = text.replace(f"__CODE_TOKEN_{idx}__", code)
-
-    return text
-
-
 def main() -> None:
     args = sys.argv[1:]
 
-    if not args or args[0] in ("-h", "--help"):
+    if not args and sys.stdin.isatty():
         print_help()
         sys.exit(0)
 
-    # Check omp available
+    # Check for help flag
+    if any(arg in ("-h", "--help") for arg in args):
+        print_help()
+        sys.exit(0)
+
+    # Check for omp in PATH
     if not shutil.which("omp"):
-        sys.stderr.write("Error: 'omp' harness executable not found in PATH.\n")
-        sys.stderr.write("Please install or ensure 'omp' is accessible in your environment.\n")
+        sys.stderr.write("Error: 'omp' executable not found in PATH.\n")
+        sys.stderr.write("Please install or ensure omp is available in your PATH.\n")
         sys.exit(1)
 
+    # Parse our custom options
     raw_mode = False
     enable_tools = False
     model_override = None
     pass_through_args = []
-    prompt_parts = []
+    prompt_words = []
 
-    # Parse arguments
     i = 0
     while i < len(args):
         arg = args[i]
@@ -180,21 +92,21 @@ def main() -> None:
         elif arg == "--tools":
             enable_tools = True
             i += 1
-        elif arg == "--model":
+        elif arg in ("-m", "--model"):
             if i + 1 < len(args):
                 model_override = args[i + 1]
                 i += 2
             else:
-                sys.stderr.write("Error: --model requires an argument\n")
-                sys.exit(1)
-        elif arg.startswith("--"):
-            pass_through_args.append(arg)
+                prompt_words.append(arg)
+                i += 1
+        elif arg.startswith("--model="):
+            model_override = arg.split("=", 1)[1]
             i += 1
         else:
-            prompt_parts.append(arg)
+            prompt_words.append(arg)
             i += 1
 
-    prompt = " ".join(prompt_parts).strip()
+    prompt = " ".join(prompt_words).strip()
 
     # Handle piped stdin
     stdin_content = ""
@@ -222,10 +134,11 @@ def main() -> None:
     else:
         cmd.append("--auto-approve")
 
-    # Instruct model to avoid LaTeX math delimiters so terminal rendering is natural
+    # Prompt convention: use normal LaTeX display math ($$ ... $$) for equations,
+    # but use normal units (~21,196 km) in conversational text.
     cmd.extend([
         "--append-system-prompt",
-        "Terminal output formatting: NEVER use LaTeX math delimiters ($ or $$). Write numbers, measurements, and units in plain text or standard markdown (e.g. ~21,196 km, ~65.5 million tons, ~200 km²)."
+        "Formatting instructions: For mathematical equations, display formulas, or matrices, use standard LaTeX block math ($$ ... $$ or \\[ ... \\]). For plain physical units, numbers, and measurements in text, write normal readable text without math dollar signs (e.g. ~21,196 km, 65.5 million tons, 200 km²)."
     ])
 
     if model_override:
@@ -262,9 +175,7 @@ def main() -> None:
             sys.exit(proc.returncode)
 
         if stdout_data:
-            # Clean any LaTeX math markers ($...$, \text{...}, etc.)
-            clean_output = convert_latex_math(stdout_data.strip())
-            console.print(Markdown(clean_output))
+            render_mixed_markdown_with_math(stdout_data.strip(), console)
         elif stderr_data:
             sys.stderr.write(stderr_data)
     else:
@@ -282,7 +193,7 @@ def main() -> None:
             sys.exit(proc.returncode)
 
         if stdout_data:
-            clean_output = convert_latex_math(stdout_data)
+            clean_output = sanitize_inline_math(stdout_data)
             sys.stdout.write(clean_output)
             sys.stdout.flush()
         elif stderr_data:

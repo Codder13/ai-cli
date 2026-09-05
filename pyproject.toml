@@ -9,6 +9,7 @@ description = "⚡ Fast, beautiful AI CLI wrapper around omp harness for Unix pi
 readme = "README.md"
 dependencies = [
     "rich>=13.0.0",
+    "pylatexenc>=2.10",
 ]
 license = { text = "MIT" }
 keywords = ["ai", "cli", "omp", "streaming", "llm", "terminal", "unix-pipeline"]
