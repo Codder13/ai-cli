@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Ruff
+        run: uvx ruff check src tests
+      - name: Tests
+        run: uv run --with pytest pytest -q
+
+  packaging:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PKGBUILD / .SRCINFO / pyproject versions match
+        run: |
+          py=$(sed -nE 's/^version = "(.*)"/\1/p' pyproject.toml)
+          pkg=$(sed -nE 's/^pkgver=(.*)/\1/p' PKGBUILD)
+          src=$(sed -nE 's/^\s*pkgver = (.*)/\1/p' .SRCINFO)
+          echo "pyproject=$py PKGBUILD=$pkg .SRCINFO=$src"
+          [ "$py" = "$pkg" ] && [ "$pkg" = "$src" ]
+      - uses: astral-sh/setup-uv@v6
+      - name: Build wheel + sdist
+        run: uv build
