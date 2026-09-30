@@ -566,10 +566,19 @@ Usage:
   ai <question or prompt>
   ai [options] <question or prompt>
   cat file | ai <question or prompt>
-  git diff | ai "review these changes"
+
+Commands:
+  ai do <request>        Propose a shell command, then [Y]es run / [e]dit / [n]o
+  ai commit              Commit message from the staged diff, confirm, then git commit
+  ai explain             Explain piped output/errors:  make 2>&1 | ai explain
+  ai log [query]         Browse/search past sessions (fzf), -a to print all matches
 
 Options:
+  -f, --file <glob>      Add file(s) as context (repeatable, quote globs: 'src/**/*.py')
+  -c, --copy             Copy the answer (first code block if any) to the clipboard
+  --json                 Machine-readable output: {{"response", "harness", "model", "seconds"}}
   --raw                  Output raw text directly without markdown rendering
+  --no-context           Don't inject ~/.config/ai/context.md or the nearest .ai.md
   --no-tools, -nt        Disable tool execution so the AI has no access to tools
   --tools, -t            Enable tool execution / auto-approval (default: enabled)
   --new                  Start a new session for this terminal (wipe previous context)
@@ -577,29 +586,31 @@ Options:
   --clear                Clear session history for current terminal tab and exit
   -a, --agent <name>     Use specific agent harness ({supported})
   -H, --handoff [name]   Handoff current session context to harness TUI
-  --wizard               Interactive selector to choose and save default harness
   -m, --model <name>     Specify model name override
+  --wizard               Interactive selector to choose and save default harness
+  --zsh                  Print zsh widget (Ctrl+G: command line -> shell command)
   -V, --version          Show version and exit
   -h, --help             Show this help message
   --                     Stop option parsing; everything after is the prompt
 
+Context:
+  ~/.config/ai/context.md and the nearest .ai.md (walking up from cwd) are added to
+  every prompt. Put project conventions there.
+
 Environment:
   AI_HARNESS             Default harness (overrides ~/.config/ai/config.json)
-
-Session Persistence:
-  Queries in the same terminal tab/pane automatically share context.
-  Use --new or --clear to reset, or --no-session for one-off ephemeral questions.
+  AI_NO_FOOTER=1         Hide the "harness · model · time" footer
 
 Examples:
   ai "how do I extract a .tar.gz file?"
-  ai "what was the command you just suggested?"
-  ai --new "start a completely different topic"
-  cat main.py | ai "explain what this code does"
-  git diff | ai "write a concise commit message for this diff"
-  ai -a claude "how to optimize this query?"
+  ai do find files over 100MB in home
+  git add -p && ai commit
+  cargo build 2>&1 | ai explain
+  ai -f 'src/**/*.luau' "where is the save logic?"
+  ai -c "regex for an email address"
+  ai log "rojo"
   ai -H omp "continue this task and write the files"
-  ai -H claude
-  ai --wizard
+  eval "$(ai --zsh)"      # in ~/.zshrc
 """
     print(help_text)
 
@@ -611,6 +622,7 @@ def _run_harness(cmd: list[str]) -> tuple[str, str]:
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            stdin=subprocess.DEVNULL,
             text=True,
         )
         stdout_data, stderr_data = proc.communicate()
@@ -626,6 +638,369 @@ def _run_harness(cmd: list[str]) -> tuple[str, str]:
     return stdout_data, stderr_data
 
 
+def _do_question_words() -> frozenset[str]:
+    from ai_cli.extras import DO_QUESTION_WORDS
+
+    return DO_QUESTION_WORDS
+
+
+SUBCOMMANDS = frozenset({"do", "commit", "explain", "log"})
+
+
+class Options:
+    """Parsed command-line options."""
+
+    def __init__(self) -> None:
+        self.raw = False
+        self.enable_tools = True
+        self.session_mode = "auto"
+        self.model: str | None = None
+        self.harness: str | None = None
+        self.handoff = False
+        self.handoff_harness: str | None = None
+        self.copy = False
+        self.json = False
+        self.use_context = True
+        self.files: list[str] = []
+        self.print_only = False  # `ai do --print`
+        self.all_matches = False  # `ai log -a`
+        self.words: list[str] = []
+
+    @property
+    def prompt(self) -> str:
+        return " ".join(self.words).strip()
+
+
+def parse_args(args: list[str]) -> Options:
+    o = Options()
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        nxt = args[i + 1] if i + 1 < len(args) else None
+        if arg == "--":
+            o.words.extend(args[i + 1 :])
+            break
+        if arg == "--raw":
+            o.raw = True
+        elif arg in ("--tools", "-t"):
+            o.enable_tools = True
+        elif arg in ("--no-tools", "-nt", "--without-tools"):
+            o.enable_tools = False
+        elif arg == "--new":
+            o.session_mode = "new"
+        elif arg == "--no-session":
+            o.session_mode = "none"
+        elif arg in ("-c", "--copy"):
+            o.copy = True
+        elif arg == "--json":
+            o.json = True
+        elif arg == "--no-context":
+            o.use_context = False
+        elif arg == "--print":
+            o.print_only = True
+        elif arg in ("--all",):
+            o.all_matches = True
+        elif arg in ("-f", "--file") and nxt is not None:
+            o.files.append(nxt)
+            i += 1
+        elif arg.startswith("--file="):
+            o.files.append(arg.split("=", 1)[1])
+        elif arg in ("-a", "--agent", "--harness") and nxt is not None:
+            o.harness = nxt
+            i += 1
+        elif arg in ("-m", "--model") and nxt is not None:
+            o.model = nxt
+            i += 1
+        elif arg.startswith(("--agent=", "--harness=")):
+            o.harness = arg.split("=", 1)[1]
+        elif arg.startswith("--model="):
+            o.model = arg.split("=", 1)[1]
+        elif arg in ("-H", "--handoff"):
+            o.handoff = True
+            if nxt is not None and nxt.lower() in HARNESS_REGISTRY:
+                o.handoff_harness = nxt.lower()
+                i += 1
+        elif arg.startswith("--handoff="):
+            o.handoff = True
+            o.handoff_harness = arg.split("=", 1)[1].strip().lower() or None
+        else:
+            o.words.append(arg)
+        i += 1
+    return o
+
+
+def _read_stdin() -> str:
+    if sys.stdin.isatty():
+        return ""
+    try:
+        return sys.stdin.read().strip()
+    except (OSError, UnicodeDecodeError):
+        return ""
+
+
+def _compose_prompt(opts: Options, body: str) -> str:
+    """Prepend context files and -f files to the prompt body."""
+    from ai_cli import extras
+
+    sections = []
+    if opts.use_context:
+        ctx = extras.build_context_block(CONFIG_DIR)
+        if ctx:
+            sections.append(ctx)
+    if opts.files:
+        block, warnings = extras.expand_file_args(opts.files)
+        for w in warnings:
+            sys.stderr.write(f"ai: {w}\n")
+        if block:
+            sections.append(f"## Files\n{block}")
+    sections.append(body)
+    return "\n\n".join(s for s in sections if s)
+
+
+def query_harness(
+    opts: Options, prompt: str, console: Any | None = None, status: str = "Thinking"
+) -> tuple[str, str, float]:
+    """Resolve harness, run the prompt. Returns (stdout, harness_name, seconds)."""
+    import time
+
+    harness_name = resolve_harness(opts.harness, console=console)
+    if not shutil.which(harness_name):
+        _harness_missing_error(harness_name)
+    builder = HARNESS_REGISTRY[harness_name]["builder"]
+    cmd = builder(opts.model, opts.enable_tools, prompt, session_mode=opts.session_mode)
+
+    t0 = time.monotonic()
+    if console is not None:
+        with console.status(f"[bold blue]{status} ({harness_name})...[/bold blue]", spinner="dots"):
+            out, err = _run_harness(cmd)
+    else:
+        out, err = _run_harness(cmd)
+    elapsed = time.monotonic() - t0
+    if not out and err:
+        sys.stderr.write(err)
+    return out or "", harness_name, elapsed
+
+
+def _footer(console: Any | None, harness: str, model: str | None, seconds: float) -> None:
+    if os.environ.get("AI_NO_FOOTER"):
+        return
+    text = f"{harness}{' · ' + model if model else ''} · {seconds:.1f}s"
+    if console is not None:
+        console.print(f"[grey50]{text}[/grey50]", justify="right", highlight=False)
+    elif sys.stderr.isatty():
+        sys.stderr.write(f"\x1b[90m{text}\x1b[0m\n")
+
+
+def _emit(opts: Options, out: str, harness: str, seconds: float, console: Any | None) -> None:
+    """Print a normal answer in the requested format, then handle --copy and footer."""
+    from ai_cli import extras
+
+    if opts.json:
+        payload = {
+            "response": out.strip(),
+            "harness": harness,
+            "model": opts.model,
+            "seconds": round(seconds, 2),
+        }
+        code = extras.first_code_block(out)
+        if code is not None:
+            payload["code"] = code
+        print(json.dumps(payload, ensure_ascii=False))
+    elif console is not None:
+        if out:
+            render_mixed_markdown_with_math(out.strip(), console)
+    elif out:
+        sys.stdout.write(sanitize_inline_math(out))
+        if not out.endswith("\n"):
+            sys.stdout.write("\n")
+        sys.stdout.flush()
+
+    if opts.copy and out:
+        code = extras.first_code_block(out)
+        tool = extras.copy_to_clipboard(code if code is not None else out.strip())
+        what = "code block" if code is not None else "answer"
+        msg = f"✓ copied {what} ({tool})" if tool else "✗ no clipboard tool found (install wl-clipboard)"
+        sys.stderr.write(f"\x1b[90m{msg}\x1b[0m\n" if sys.stderr.isatty() else msg + "\n")
+
+    if not opts.json:
+        _footer(console, harness, opts.model, seconds)
+
+
+def _console_for(opts: Options) -> Any | None:
+    render = sys.stdout.isatty() and not opts.raw and not opts.json and HAS_RICH
+    return _make_console() if render else None
+
+
+# --- subcommands -----------------------------------------------------------------
+
+
+def cmd_explain(opts: Options) -> None:
+    from ai_cli import extras
+
+    piped = _read_stdin()
+    if not piped and not opts.prompt and not opts.files:
+        sys.stderr.write("usage: <command> 2>&1 | ai explain [extra question]\n")
+        sys.exit(2)
+    body = f"{extras.EXPLAIN_PROMPT}\n\n```\n{piped}\n```" if piped else extras.EXPLAIN_PROMPT
+    if opts.prompt:
+        body = f"{body}\n\n{opts.prompt}"
+    console = _console_for(opts)
+    out, harness, secs = query_harness(opts, _compose_prompt(opts, body), console, status="Explaining")
+    _emit(opts, out, harness, secs, console)
+
+
+def cmd_do(opts: Options) -> None:
+    from ai_cli import extras
+
+    request = opts.prompt or _read_stdin()
+    if not request:
+        sys.stderr.write("usage: ai do <what you want to do>\n")
+        sys.exit(2)
+    shell = os.path.basename(os.environ.get("SHELL", "sh"))
+    os_name = "Linux" if sys.platform.startswith("linux") else sys.platform
+    prompt = extras.DO_PROMPT.format(shell=shell, os_name=os_name, cwd=os.getcwd(), request=request)
+    opts.enable_tools = False
+    opts.session_mode = "none"
+    console = None if opts.print_only else _console_for(opts)
+    out, harness, secs = query_harness(opts, _compose_prompt(opts, prompt), console, status="Thinking")
+    command = extras.clean_single_command(out)
+    if not command:
+        sys.stderr.write("ai: no command produced\n")
+        sys.exit(1)
+
+    if opts.print_only or opts.json:
+        print(json.dumps({"command": command, "harness": harness, "seconds": round(secs, 2)}) if opts.json else command)
+        return
+    if opts.copy:
+        extras.copy_to_clipboard(command)
+
+    if console is not None:
+        from rich.syntax import Syntax
+
+        console.print(Syntax(command, "bash", theme="ansi_dark", background_color="default", word_wrap=True))
+    else:
+        sys.stderr.write(f"$ {command}\n")
+    _footer(console, harness, opts.model, secs)
+
+    if not os.isatty(0) and not _reopen_tty():
+        print(command)
+        return
+    choice = extras.ask_choice("Run it? [Y/e/n] ")
+    if choice == "e":
+        command = extras.edit_line(command)
+        choice = "y" if command else "n"
+    if choice != "y":
+        sys.exit(1)
+    _append_shell_history(command)
+    sys.exit(subprocess.call(command, shell=True, executable=os.environ.get("SHELL") or None))
+
+
+def _reopen_tty() -> bool:
+    """When stdin was piped, reattach it to the terminal for the confirm prompt."""
+    try:
+        fd = os.open("/dev/tty", os.O_RDONLY)
+    except OSError:
+        return False
+    os.dup2(fd, 0)
+    os.close(fd)
+    sys.stdin = open(0, closefd=False)
+    return True
+
+
+def _append_shell_history(command: str) -> None:
+    """Best effort: add the executed command to zsh/bash history file."""
+    import time
+
+    shell = os.path.basename(os.environ.get("SHELL", ""))
+    histfile = os.environ.get("HISTFILE") or str(Path.home() / (".zsh_history" if shell == "zsh" else ".bash_history"))
+    try:
+        with open(histfile, "a", encoding="utf-8") as f:
+            if shell == "zsh":
+                f.write(f": {int(time.time())}:0;{command}\n")
+            else:
+                f.write(command + "\n")
+    except OSError:
+        pass
+
+
+def cmd_commit(opts: Options) -> None:
+    from ai_cli import extras
+
+    diff = extras.staged_diff()
+    if diff is None:
+        sys.stderr.write("ai commit: nothing staged (git add first) or not a git repository\n")
+        sys.exit(1)
+    body = f"{extras.COMMIT_PROMPT}\n\nRecent commits:\n{extras.recent_commits()}\n\nStaged diff:\n```diff\n{diff}\n```"
+    if opts.prompt:
+        body += f"\n\nExtra instruction: {opts.prompt}"
+    opts.enable_tools = False
+    opts.session_mode = "none"
+    console = None if opts.print_only else _console_for(opts)
+    out, harness, secs = query_harness(opts, _compose_prompt(opts, body), console, status="Writing commit")
+    message = extras.clean_commit_message(out)
+    if not message:
+        sys.stderr.write("ai commit: empty message\n")
+        sys.exit(1)
+    if opts.print_only or not sys.stdin.isatty():
+        print(message)
+        return
+
+    if console is not None:
+        from rich.panel import Panel
+
+        console.print(Panel(message, title="commit message", border_style="grey50", expand=False))
+    else:
+        print(f"\n{message}\n")
+    _footer(console, harness, opts.model, secs)
+
+    choice = extras.ask_choice("Commit? [Y/e/n] ")
+    if choice == "n":
+        sys.exit(1)
+    if choice == "e":
+        sys.exit(subprocess.call(["git", "commit", "-e", "-m", message]))
+    sys.exit(subprocess.call(["git", "commit", "-m", message]))
+
+
+def cmd_log(opts: Options) -> None:
+    from ai_cli import extras
+
+    sessions = extras.list_sessions(CACHE_DIR)
+    query = opts.prompt.lower()
+    if query:
+        sessions = [
+            s for s in sessions
+            if query in s["title"].lower()
+            or any(query in m["content"].lower() for m in extras.read_session_messages(Path(s["path"])))
+        ]
+    if not sessions:
+        sys.stderr.write("ai log: no sessions found" + (f" matching '{opts.prompt}'" if query else "") + "\n")
+        sys.exit(1)
+
+    if opts.json:
+        print(json.dumps([{k: v for k, v in s.items() if k != "mtime"} for s in sessions], ensure_ascii=False))
+        return
+
+    interactive = sys.stdout.isatty() and sys.stdin.isatty() and shutil.which("fzf") and not opts.all_matches
+    if interactive:
+        chosen = extras.pick_session_fzf(sessions)
+        if chosen:
+            _show_session(Path(chosen), opts)
+        return
+    for s in sessions:
+        print(f"{s['when']}  {s['harness']:<8} {s['turns']:>3}×  {s['title']}")
+
+
+def _show_session(path: Path, opts: Options) -> None:
+    from ai_cli import extras
+
+    text = extras.format_transcript(extras.read_session_messages(path))
+    console = _console_for(opts)
+    if console is not None:
+        render_mixed_markdown_with_math(text, console)
+    else:
+        print(text)
+
+
 def main() -> None:
     args = sys.argv[1:]
 
@@ -633,6 +1008,16 @@ def main() -> None:
         from ai_cli import __version__
 
         print(f"ai-flow-cli {__version__}")
+        sys.exit(0)
+
+    if args[:1] == ["--zsh"]:
+        from ai_cli.extras import ZSH_SNIPPET
+
+        print(ZSH_SNIPPET)
+        sys.exit(0)
+
+    if args[:1] == ["--show-session"] and len(args) > 1:
+        _show_session(Path(args[1]), parse_args(args[2:]))
         sys.exit(0)
 
     # Check for wizard flag immediately
@@ -650,113 +1035,50 @@ def main() -> None:
         print_help()
         sys.exit(0)
 
-    # Check for help flag
-    if any(arg in ("-h", "--help") for arg in args):
+    # Check for help flag (before "--" only)
+    head = args[: args.index("--")] if "--" in args else args
+    if any(arg in ("-h", "--help") for arg in head):
         print_help()
         sys.exit(0)
 
-    # Parse our custom options
-    raw_mode = False
-    enable_tools = True
-    session_mode = "auto"
-    model_override = None
-    cli_harness = None
-    handoff_mode = False
-    handoff_harness = None
-    prompt_words = []
+    # Subcommands: first word only, and `ai do you know ...` stays a question.
+    if args and args[0] in SUBCOMMANDS:
+        sub = args[0]
+        rest = args[1:]
+        is_question = sub == "do" and rest[:1] and rest[0].lower() in _do_question_words()
+        if not is_question:
+            opts = parse_args(rest)
+            if sub == "log" and opts.harness is not None and opts.harness not in HARNESS_REGISTRY:
+                # `ai log -a rojo`: -a means "print all" here, not --agent
+                opts.all_matches = True
+                opts.words.insert(0, opts.harness)
+                opts.harness = None
+            elif sub == "log" and "-a" in rest and opts.harness is None:
+                opts.all_matches = True
+            {"do": cmd_do, "commit": cmd_commit, "explain": cmd_explain, "log": cmd_log}[sub](opts)
+            return
 
-    i = 0
-    while i < len(args):
-        arg = args[i]
-        if arg == "--":
-            prompt_words.extend(args[i + 1 :])
-            break
-        if arg == "--raw":
-            raw_mode = True
-        elif arg in ("--tools", "-t"):
-            enable_tools = True
-        elif arg in ("--no-tools", "-nt", "--without-tools"):
-            enable_tools = False
-        elif arg == "--new":
-            session_mode = "new"
-        elif arg == "--no-session":
-            session_mode = "none"
-        elif arg in ("-a", "--agent", "--harness", "-m", "--model"):
-            if i + 1 < len(args):
-                if arg in ("-m", "--model"):
-                    model_override = args[i + 1]
-                else:
-                    cli_harness = args[i + 1]
-                i += 1
-            else:
-                prompt_words.append(arg)
-        elif arg.startswith(("--agent=", "--harness=")):
-            cli_harness = arg.split("=", 1)[1]
-        elif arg.startswith("--model="):
-            model_override = arg.split("=", 1)[1]
-        elif arg in ("-H", "--handoff"):
-            handoff_mode = True
-            nxt = args[i + 1].lower() if i + 1 < len(args) else ""
-            if nxt in HARNESS_REGISTRY:
-                handoff_harness = nxt
-                i += 1
-        elif arg.startswith("--handoff="):
-            handoff_mode = True
-            handoff_harness = arg.split("=", 1)[1].strip().lower() or None
-        else:
-            prompt_words.append(arg)
-        i += 1
+    opts = parse_args(args)
+    prompt = opts.prompt
 
-    prompt = " ".join(prompt_words).strip()
-
-    # Handle piped stdin
-    stdin_content = ""
-    if not sys.stdin.isatty():
-        try:
-            stdin_content = sys.stdin.read().strip()
-        except (OSError, UnicodeDecodeError):
-            pass
-
+    stdin_content = _read_stdin()
     if stdin_content:
         prompt = f"{stdin_content}\n\n{prompt}" if prompt else stdin_content
 
     # Handoff mode: transfer context to harness TUI and open it
-    if handoff_mode:
-        target = handoff_harness or cli_harness or resolve_harness(None, console=_make_console())
+    if opts.handoff:
+        target = opts.handoff_harness or opts.harness or resolve_harness(None, console=_make_console())
         execute_handoff(target_harness=target, extra_instruction=prompt)
         return
 
-    if not prompt:
+    if not prompt and not opts.files:
         print_help()
         sys.exit(1)
 
-    # Only build a Rich console when we will actually render to a terminal.
-    render = sys.stdout.isatty() and not raw_mode and HAS_RICH
-    console = _make_console() if render else None
-
-    harness_name = resolve_harness(cli_harness, console=console)
-    if not shutil.which(harness_name):
-        _harness_missing_error(harness_name)
-
-    builder = HARNESS_REGISTRY[harness_name]["builder"]
-    cmd = builder(model_override, enable_tools, prompt, session_mode=session_mode)
-
-    if render and console is not None:
-        # Show clean spinner while harness processes
-        with console.status(f"[bold blue]Thinking ({harness_name})...[/bold blue]", spinner="dots"):
-            stdout_data, stderr_data = _run_harness(cmd)
-        if stdout_data:
-            render_mixed_markdown_with_math(stdout_data.strip(), console)
-        elif stderr_data:
-            sys.stderr.write(stderr_data)
-    else:
-        # Piped stdout or raw mode or no rich: direct output
-        stdout_data, stderr_data = _run_harness(cmd)
-        if stdout_data:
-            sys.stdout.write(sanitize_inline_math(stdout_data))
-            sys.stdout.flush()
-        elif stderr_data:
-            sys.stderr.write(stderr_data)
+    console = _console_for(opts)
+    full_prompt = _compose_prompt(opts, prompt or "Review these files.")
+    out, harness, secs = query_harness(opts, full_prompt, console)
+    _emit(opts, out, harness, secs, console)
 
 
 if __name__ == "__main__":
