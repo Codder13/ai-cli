@@ -331,3 +331,23 @@ def test_import_stays_light():
     code = "import sys, ai_cli.main; print('ai_cli.extras' in sys.modules, 'rich.markdown' in sys.modules)"
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
     assert out.stdout.strip() == "False False"
+
+
+@pytest.mark.parametrize("sub", ["do", "commit", "explain", "log"])
+def test_subcommand_help(monkeypatch, capsys, sub):
+    with pytest.raises(SystemExit) as e:
+        run(monkeypatch, sub, "--help")
+    assert e.value.code == 0
+    out = capsys.readouterr().out
+    assert out.startswith(f"ai {sub}") and "Examples:" in out
+
+
+def test_help_topic_and_every_flag_has_example(monkeypatch, capsys):
+    with pytest.raises(SystemExit):
+        run(monkeypatch, "help", "do")
+    assert "Run it? [Y/e/n]" in capsys.readouterr().out
+    with pytest.raises(SystemExit):
+        run(monkeypatch, "--help")
+    out = capsys.readouterr().out
+    for flag in ("-f 'src", "ai -c ", "--json \"", "ai -H omp", "ai do find", "ai commit", "| ai explain", "ai log rojo", "--zsh"):
+        assert flag in out, flag

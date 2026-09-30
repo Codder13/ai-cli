@@ -558,61 +558,177 @@ def _harness_missing_error(harness_name: str) -> None:
     sys.exit(1)
 
 
-def print_help() -> None:
-    supported = ", ".join(HARNESS_REGISTRY.keys())
-    help_text = f"""ai - Fast terminal AI for questions, pipelines & code assistance
+def _style(text: str, code: str) -> str:
+    return f"\x1b[{code}m{text}\x1b[0m" if sys.stdout.isatty() and not os.environ.get("NO_COLOR") else text
+
+
+def _render_help(text: str) -> str:
+    """Bold section headers, dim comments — only on a terminal."""
+    out = []
+    for line in text.splitlines():
+        if line and not line.startswith(" ") and line.endswith(":"):
+            out.append(_style(line, "1;36"))
+        elif line.lstrip().startswith("# "):
+            out.append(_style(line, "90"))
+        elif line.startswith("  $ "):
+            out.append("  " + _style("$", "90") + line[3:])
+        else:
+            out.append(line)
+    return "\n".join(out)
+
+
+SUBCOMMAND_HELP: dict[str, str] = {
+    "do": """ai do — describe what you want, get ONE shell command, confirm before it runs
 
 Usage:
-  ai <question or prompt>
-  ai [options] <question or prompt>
-  cat file | ai <question or prompt>
-
-Commands:
-  ai do <request>        Propose a shell command, then [Y]es run / [e]dit / [n]o
-  ai commit              Commit message from the staged diff, confirm, then git commit
-  ai explain             Explain piped output/errors:  make 2>&1 | ai explain
-  ai log [query]         Browse/search past sessions (fzf), -a to print all matches
+  ai do [options] <request>
 
 Options:
-  -f, --file <glob>      Add file(s) as context (repeatable, quote globs: 'src/**/*.py')
-  -c, --copy             Copy the answer (first code block if any) to the clipboard
-  --json                 Machine-readable output: {{"response", "harness", "model", "seconds"}}
-  --raw                  Output raw text directly without markdown rendering
-  --no-context           Don't inject ~/.config/ai/context.md or the nearest .ai.md
-  --no-tools, -nt        Disable tool execution so the AI has no access to tools
-  --tools, -t            Enable tool execution / auto-approval (default: enabled)
-  --new                  Start a new session for this terminal (wipe previous context)
-  --no-session           Run ephemerally without persisting or resuming session history
-  --clear                Clear session history for current terminal tab and exit
-  -a, --agent <name>     Use specific agent harness ({supported})
-  -H, --handoff [name]   Handoff current session context to harness TUI
-  -m, --model <name>     Specify model name override
-  --wizard               Interactive selector to choose and save default harness
-  --zsh                  Print zsh widget (Ctrl+G: command line -> shell command)
-  -V, --version          Show version and exit
-  -h, --help             Show this help message
-  --                     Stop option parsing; everything after is the prompt
+  --print                Only print the command (no prompt, nothing runs) — for scripts
+  -c, --copy             Also copy the command to the clipboard
+  --json                 {"command", "harness", "seconds"}
+  -a, -m                 Harness / model override
 
-Context:
-  ~/.config/ai/context.md and the nearest .ai.md (walking up from cwd) are added to
-  every prompt. Put project conventions there.
+After the command is shown:
+  Y / Enter              Run it (and add it to your shell history)
+  e                      Edit it in place first, then run
+  n                      Cancel
+
+Examples:
+  $ ai do find files over 100MB in my home
+  # → find ~ -type f -size +100M -exec ls -lh {} +     Run it? [Y/e/n]
+  $ ai do kill whatever is listening on port 3000
+  $ ai do convert all .webp in this folder to png
+  $ ai do --print show disk usage sorted | sh      # scripting
+  # Tip: `ai do you know …` is treated as a normal question, not a command.
+""",
+    "commit": """ai commit — Conventional Commit message from your staged diff
+
+Usage:
+  ai commit [options] [extra instruction]
+
+Options:
+  --print                Only print the message (don't commit)
+  -a, -m                 Harness / model override
+
+Then:
+  Y / Enter              git commit -m "<message>"
+  e                      Open the message in $EDITOR (git commit -e)
+  n                      Cancel
+
+Examples:
+  $ git add -p && ai commit
+  $ ai commit "mention it fixes #12"
+  $ ai commit --print | wl-copy
+  # It reads your last 10 commit subjects to match the repo's style.
+""",
+    "explain": """ai explain — pipe output or an error in, get what broke and how to fix it
+
+Usage:
+  <command> 2>&1 | ai explain [question]
+  ai explain -f <file> [question]
+
+Examples:
+  $ cargo build 2>&1 | ai explain
+  $ journalctl -u nginx -n 50 | ai explain "why won't it start?"
+  $ ai explain -f crash.log
+  # Don't forget 2>&1 — most errors go to stderr.
+""",
+    "log": """ai log — browse and search your past `ai` sessions
+
+Usage:
+  ai log [query]
+  ai log -a [query]        Print every match instead of opening fzf
+  ai log --json [query]
+
+Examples:
+  $ ai log                 # fzf picker, transcript preview on the right
+  $ ai log rojo            # only sessions mentioning "rojo"
+  $ ai log -a docker       # plain list, e.g. to grep
+  $ ai log --json | jq '.[0]'
+  # Without fzf installed it prints a plain list.
+""",
+}
+
+
+def print_help(topic: str | None = None) -> None:
+    if topic in SUBCOMMAND_HELP:
+        print(_render_help(SUBCOMMAND_HELP[topic]))
+        return
+    supported = ", ".join(HARNESS_REGISTRY.keys())
+    help_text = f"""ai — fast terminal AI for questions, pipelines & code
+
+Usage:
+  ai [options] <question>
+  <command> | ai [options] [question]
+  ai <do|commit|explain|log> …        (ai <command> --help for details)
+
+Ask:
+  $ ai how do I extract a .tar.gz file     # no quotes needed
+  $ ai "what was the command you just suggested?"   # same tab = same conversation
+  $ ai --new "different topic"                        # fresh conversation
+
+Pipes:
+  $ cat main.py | ai explain what this does
+  $ git diff | ai review these changes
+  $ ai "regex for uuid4" > regex.txt       # piped output is plain text
+
+Commands:
+  ai do <request>        Natural language → one shell command, confirm [Y/e/n] before running
+    $ ai do find files over 100MB in my home
+  ai commit              Commit message from the staged diff → confirm → git commit
+    $ git add -p && ai commit
+  ai explain             Explain piped errors/output and how to fix them
+    $ cargo build 2>&1 | ai explain
+  ai log [query]         Search past sessions (fzf + preview)
+    $ ai log rojo
+
+Files & context:
+  -f, --file <glob>      Attach files (repeatable; quote globs)
+    $ ai -f 'src/**/*.luau' "where is player data saved?"
+    $ ai -f README.md -f pyproject.toml "is the install section right?"
+  --no-context           Skip ~/.config/ai/context.md and the nearest .ai.md
+    # Put your stack/preferences in ~/.config/ai/context.md and project rules in
+    # <project>/.ai.md — they're added to every prompt automatically.
+
+Output:
+  -c, --copy             Copy the answer (just the code block if there is one)
+    $ ai -c "bash one-liner to count lines in all .py files"
+  --json                 {{"response", "code", "harness", "model", "seconds"}}
+    $ ai --json "capital of France" | jq -r .response
+  --raw                  Plain text, no markdown rendering
+
+Harness & model:
+  -a, --agent <name>     {supported}
+    $ ai -a claude "optimize this query" < query.sql
+  -m, --model <name>     Model override
+  -H, --handoff [name]   Continue this conversation in the harness TUI
+    $ ai -H omp "now implement it"
+  --wizard               Pick and save your default harness
+
+Session & tools:
+  --new                  Start a new conversation in this terminal
+  --no-session           One-off question, nothing saved
+  --clear                Forget this terminal's conversation
+  -nt, --no-tools        No tool access (plain answer)
+  -t, --tools            Tools on (default)
+
+Shell:
+  --zsh                  Print the zsh widget: type a request, press Ctrl+G → command
+    $ echo 'eval "$(ai --zsh)"' >> ~/.zshrc
+
+Other:
+  -V, --version          Version
+  -h, --help             This help;  ai <command> --help for command help
+  --                     Everything after is prompt text:  ai -- --why-is-this-flag
 
 Environment:
   AI_HARNESS             Default harness (overrides ~/.config/ai/config.json)
-  AI_NO_FOOTER=1         Hide the "harness · model · time" footer
-
-Examples:
-  ai "how do I extract a .tar.gz file?"
-  ai do find files over 100MB in home
-  git add -p && ai commit
-  cargo build 2>&1 | ai explain
-  ai -f 'src/**/*.luau' "where is the save logic?"
-  ai -c "regex for an email address"
-  ai log "rojo"
-  ai -H omp "continue this task and write the files"
-  eval "$(ai --zsh)"      # in ~/.zshrc
+  AI_NO_FOOTER=1         Hide the dim "harness · model · 3.2s" footer
+  AI_ZSH_KEY             Key for the zsh widget (default ^G)
+  NO_COLOR=1             No colors in help
 """
-    print(help_text)
+    print(_render_help(help_text))
 
 
 def _run_harness(cmd: list[str]) -> tuple[str, str]:
@@ -1035,10 +1151,13 @@ def main() -> None:
         print_help()
         sys.exit(0)
 
-    # Check for help flag (before "--" only)
+    # Help: `ai --help`, `ai help [cmd]`, `ai <cmd> --help` (flags before "--" only)
     head = args[: args.index("--")] if "--" in args else args
+    if args[:1] == ["help"]:
+        print_help(args[1] if len(args) > 1 else None)
+        sys.exit(0)
     if any(arg in ("-h", "--help") for arg in head):
-        print_help()
+        print_help(args[0] if args and args[0] in SUBCOMMANDS else None)
         sys.exit(0)
 
     # Subcommands: first word only, and `ai do you know ...` stays a question.
