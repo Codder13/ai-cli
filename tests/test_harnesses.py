@@ -1,24 +1,24 @@
 import os
-import shutil
+
 import pytest
+
 from ai_cli.main import (
     HARNESS_REGISTRY,
-    detect_installed_harnesses,
-    resolve_harness,
-    build_pi_cmd,
-    build_omp_cmd,
     build_claude_cmd,
     build_codex_cmd,
     build_copilot_cmd,
-    build_opencode_cmd,
-    get_terminal_session_key,
-    get_terminal_session_dir,
+    build_omp_cmd,
+    build_pi_cmd,
     clear_terminal_session,
-    LATEX_SYSTEM_PROMPT,
-    format_session_for_handoff,
-    load_terminal_session_history,
+    detect_installed_harnesses,
     execute_handoff,
+    format_session_for_handoff,
+    get_terminal_session_dir,
+    get_terminal_session_key,
+    load_terminal_session_history,
+    resolve_harness,
 )
+
 
 def test_registry_contains_popular_harnesses():
     expected = {"pi", "omp", "claude", "codex", "copilot", "opencode"}
