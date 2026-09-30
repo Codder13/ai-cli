@@ -1,6 +1,6 @@
 # Maintainer: Denis Bolba <https://github.com/Codder13>
 pkgname=ai-flow-cli
-pkgver=0.12.0
+pkgver=0.12.1
 pkgrel=1
 pkgdesc="Fast terminal AI for Unix pipelines: wraps pi, omp, claude, codex, copilot & opencode"
 arch=('any')
