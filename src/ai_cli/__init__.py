@@ -1,3 +1,3 @@
-"""Zero-dependency, instant streaming AI CLI for Unix pipelines."""
+"""ai-flow-cli: terminal AI wrapper around coding harnesses for Unix pipelines."""
 
-__version__ = "0.9.0"
+__version__ = "0.11.0"
