@@ -1,5 +1,5 @@
-Output demo.gif
-Output demo.mp4
+# Render from the repo root: vhs assets/demo.tape
+Output assets/demo.gif
 
 Set FontSize 14
 Set FontFamily "CaskaydiaMono Nerd Font"

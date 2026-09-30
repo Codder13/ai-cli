@@ -4,6 +4,8 @@
 
 Wraps fast headless AI harnesses (`pi`, `omp`, `claude`, `codex`, `copilot`, `opencode`) for everyday queries and Unix pipelines.
 
+![ai-flow-cli demo](assets/demo.gif)
+
 ---
 
 ## ⚡ Features

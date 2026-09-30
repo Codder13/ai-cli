@@ -6,3 +6,16 @@ dist/
 build/
 .venv/
 .env
+.pytest_cache/
+.ruff_cache/
+uv.lock
+
+# makepkg artifacts
+pkg/
+src/ai-flow-cli-*/
+*.pkg.tar.*
+ai-flow-cli-*.tar.gz
+
+# scratch VHS renders
+*.mp4
+test_*.gif

@@ -1,0 +1,7 @@
+# omp_math.mjs is a bundled/minified extract of omp's LaTeX renderer.
+# Mark it vendored so GitHub Linguist reports the repo as Python, not JavaScript.
+src/ai_cli/omp_math.mjs linguist-vendored linguist-generated
+
+# Demo assets
+assets/*.gif binary
+assets/*.tape linguist-documentation
