@@ -9,7 +9,7 @@ license=('MIT')
 depends=('python' 'python-rich' 'python-pylatexenc')
 makedepends=('python-build' 'python-installer' 'python-hatchling')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/Codder13/ai-flow-cli/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('882f40df5cd1ea3f689b05180dc9e4765c3e8d83285ca0b67d9d6955c683e43d')
+sha256sums=('dd1f765c445b1768168cba8227d500c93dd2e29d93123a90fcce217f07698043')
 
 build() {
     cd "$pkgname-$pkgver"

@@ -12,6 +12,6 @@ pkgbase = ai-flow-cli
 	depends = python-rich
 	depends = python-pylatexenc
 	source = ai-flow-cli-0.12.1.tar.gz::https://github.com/Codder13/ai-flow-cli/archive/refs/tags/v0.12.1.tar.gz
-	sha256sums = 882f40df5cd1ea3f689b05180dc9e4765c3e8d83285ca0b67d9d6955c683e43d
+	sha256sums = dd1f765c445b1768168cba8227d500c93dd2e29d93123a90fcce217f07698043
 
 pkgname = ai-flow-cli
