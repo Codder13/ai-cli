@@ -233,8 +233,10 @@ def recent_commits(n: int = 10) -> str:
 
 
 def read_session_messages(path: Path) -> list[dict[str, str]]:
-    from ai_cli.main import _extract_text_from_content
+    from ai_cli.main import FX_SESSION_FILE, _extract_text_from_content, _load_fx_history
 
+    if path.name == FX_SESSION_FILE:
+        return _load_fx_history(path)
     messages: list[dict[str, str]] = []
     try:
         with open(path, encoding="utf-8") as f:
@@ -269,7 +271,8 @@ def list_sessions(cache_dir: Path) -> list[dict]:
     from datetime import datetime
 
     out = []
-    for path in cache_dir.glob("*/*/*.jsonl"):
+    # fx sessions are referenced by a `session_id` pointer file (see main.build_fx_cmd)
+    for path in [*cache_dir.glob("*/*/*.jsonl"), *cache_dir.glob("fx/*/session_id")]:
         msgs = read_session_messages(path)
         if not msgs:
             continue

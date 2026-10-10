@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ai-flow-cli"
-version = "0.12.1"
+version = "0.13.0"
 description = "⚡ Fast, beautiful AI CLI wrapper around modern coding harnesses for Unix pipelines"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -13,7 +13,7 @@ dependencies = [
     "pylatexenc>=2.10",
 ]
 license = { text = "MIT" }
-keywords = ["ai", "cli", "omp", "pi", "claude", "streaming", "llm", "terminal", "unix-pipeline"]
+keywords = ["ai", "cli", "omp", "pi", "claude", "fx", "streaming", "llm", "terminal", "unix-pipeline"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",

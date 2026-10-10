@@ -4,9 +4,12 @@ import pytest
 
 from ai_cli.main import (
     HARNESS_REGISTRY,
+    LATEX_SYSTEM_PROMPT,
     build_claude_cmd,
     build_codex_cmd,
     build_copilot_cmd,
+    build_fx_cmd,
+    build_fx_handoff_cmd,
     build_omp_cmd,
     build_pi_cmd,
     clear_terminal_session,
@@ -16,12 +19,13 @@ from ai_cli.main import (
     get_terminal_session_dir,
     get_terminal_session_key,
     load_terminal_session_history,
+    parse_fx_output,
     resolve_harness,
 )
 
 
 def test_registry_contains_popular_harnesses():
-    expected = {"pi", "omp", "claude", "codex", "copilot", "opencode"}
+    expected = {"pi", "omp", "claude", "codex", "copilot", "opencode", "fx"}
     assert expected.issubset(set(HARNESS_REGISTRY.keys()))
 
 def test_build_pi_cmd():
@@ -185,3 +189,69 @@ def test_execute_handoff_command_formation(monkeypatch):
     assert file == "claude"
     assert "previous question" in args[-1]
 
+
+
+def test_build_fx_cmd(monkeypatch):
+    monkeypatch.setattr("ai_cli.main.get_terminal_session_key", lambda: "k")
+
+    cmd = build_fx_cmd(model=None, enable_tools=False, prompt="hello", session_mode="none")
+    assert cmd[:3] == ["fx", "ask", "--json"]
+    assert "--no-save" in cmd
+    assert "--full-access" not in cmd
+    assert cmd[-2] == "--"
+    assert cmd[-1].endswith("hello")
+    assert "Do not call any tools" in cmd[-1]
+
+    cmd_auto = build_fx_cmd(model="m1", enable_tools=True, prompt="hi", session_mode="auto")
+    assert "--full-access" in cmd_auto
+    assert "--resume-id" not in cmd_auto
+    assert cmd_auto[cmd_auto.index("--model") + 1] == "m1"
+
+    assert parse_fx_output('{"output":"x","final_output":"answer","session_id":"abc123"}') == "answer"
+    cmd_resume = build_fx_cmd(model=None, enable_tools=True, prompt="again", session_mode="auto")
+    assert cmd_resume[cmd_resume.index("--resume-id") + 1] == "abc123"
+
+    cmd_new = build_fx_cmd(model=None, enable_tools=True, prompt="fresh", session_mode="new")
+    assert "--resume-id" not in cmd_new
+
+
+def test_parse_fx_output_no_session_does_not_save(monkeypatch):
+    monkeypatch.setattr("ai_cli.main.get_terminal_session_key", lambda: "k")
+    assert parse_fx_output('{"final_output":"ok","session_id":"zzz"}', session_mode="none") == "ok"
+    assert "--resume-id" not in build_fx_cmd(model=None, prompt="q", session_mode="auto")
+    assert parse_fx_output("not json") == "not json"
+
+
+def _write_fx_session(fx_home, sid):
+    import json
+    ev = fx_home / "sessions" / sid
+    ev.mkdir(parents=True)
+    with open(ev / "events.jsonl", "w") as f:
+        f.write(json.dumps({"event": {"user": {"text": LATEX_SYSTEM_PROMPT + "\n\nwhat is 2+2"}}}) + "\n")
+        f.write(json.dumps({"event": {"assistant": {"text": "4"}}}) + "\n")
+        f.write(json.dumps({"event": {"turn_completed": {}}}) + "\n")
+
+
+def test_fx_history_for_handoff_and_log(monkeypatch, tmp_path):
+    from ai_cli import extras, main
+
+    fx_home = tmp_path / "fx"
+    monkeypatch.setattr("ai_cli.main.FX_HOME", fx_home)
+    monkeypatch.setattr("ai_cli.main.get_terminal_session_key", lambda: "k")
+    parse_fx_output('{"final_output":"ok","session_id":"S1"}')
+    _write_fx_session(fx_home, "S1")
+
+    expected = [{"role": "user", "content": "what is 2+2"}, {"role": "assistant", "content": "4"}]
+    assert load_terminal_session_history() == expected
+
+    sessions = extras.list_sessions(main.CACHE_DIR)
+    assert len(sessions) == 1
+    assert sessions[0]["harness"] == "fx"
+    assert sessions[0]["title"] == "what is 2+2"
+
+
+def test_fx_handoff_resumes_session(monkeypatch):
+    monkeypatch.setattr("ai_cli.main.get_terminal_session_key", lambda: "k")
+    assert build_fx_handoff_cmd("") == ["fx"]
+    parse_fx_output('{"final_output":"ok","session_id":"S9"}')
+    assert build_fx_handoff_cmd("") == ["fx", "--resume", "S9"]

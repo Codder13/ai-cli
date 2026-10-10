@@ -1,3 +1,3 @@
 """ai-flow-cli: terminal AI wrapper around coding harnesses for Unix pipelines."""
 
-__version__ = "0.12.1"
+__version__ = "0.13.0"

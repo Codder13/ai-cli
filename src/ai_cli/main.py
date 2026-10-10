@@ -39,9 +39,12 @@ except ImportError:
 CONFIG_DIR = Path.home() / ".config" / "ai"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 CACHE_DIR = Path.home() / ".cache" / "ai" / "sessions"
+FX_HOME = Path.home() / ".fx"
+# fx keeps its own session store; we only remember the session id per terminal.
+FX_SESSION_FILE = "session_id"
 
 # Order used when no harness is configured: first one found in PATH wins.
-HARNESS_PREFERENCE = ("pi", "omp", "claude", "codex", "copilot", "opencode")
+HARNESS_PREFERENCE = ("pi", "omp", "claude", "codex", "copilot", "opencode", "fx")
 
 LATEX_SYSTEM_PROMPT = (
     "Formatting instructions: For mathematical equations, display formulas, or matrices, "
@@ -147,16 +150,19 @@ def load_terminal_session_history() -> list[dict[str, str]]:
                 target = harness_dir / key
                 if target.is_dir():
                     session_files.extend(target.glob("*.jsonl"))
+                    session_files.extend(target.glob(FX_SESSION_FILE))
 
     # Fallback: if no session files found for this tab, check most recent session file anywhere in CACHE_DIR
     if not session_files and CACHE_DIR.is_dir():
-        session_files = list(CACHE_DIR.glob("*/*/*.jsonl"))
+        session_files = [*CACHE_DIR.glob("*/*/*.jsonl"), *CACHE_DIR.glob(f"*/*/{FX_SESSION_FILE}")]
 
     if not session_files:
         return []
 
     # Pick the most recently modified session file
     latest_file = max(session_files, key=lambda p: p.stat().st_mtime)
+    if latest_file.name == FX_SESSION_FILE:
+        return _load_fx_history(latest_file)
 
     messages: list[dict[str, str]] = []
     try:
@@ -179,6 +185,37 @@ def load_terminal_session_history() -> list[dict[str, str]]:
     except OSError:
         pass
 
+    return messages
+
+
+def _load_fx_history(session_id_file: Path) -> list[dict[str, str]]:
+    """Load conversation turns from the fx session referenced by a stored session id."""
+    try:
+        session_id = session_id_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        return []
+    if not session_id:
+        return []
+    messages: list[dict[str, str]] = []
+    try:
+        with open(FX_HOME / "sessions" / session_id / "events.jsonl", encoding="utf-8") as f:
+            for line in f:
+                try:
+                    event = json.loads(line).get("event", {})
+                except (json.JSONDecodeError, AttributeError):
+                    continue
+                for role in ("user", "assistant"):
+                    entry = event.get(role) if isinstance(event, dict) else None
+                    if not isinstance(entry, dict):
+                        continue
+                    text = str(entry.get("text") or "")
+                    # Strip the formatting/tool preamble we prepend to fx prompts
+                    if role == "user" and LATEX_SYSTEM_PROMPT in text:
+                        text = text.split(LATEX_SYSTEM_PROMPT, 1)[1]
+                    if text.strip():
+                        messages.append({"role": role, "content": text.strip()})
+    except OSError:
+        pass
     return messages
 
 
@@ -220,9 +257,12 @@ def execute_handoff(target_harness: str | None = None, extra_instruction: str = 
         initial_prompt = extra_instruction
 
     # Build interactive command to launch the harness TUI
-    cmd = [target_harness]
-    if initial_prompt and target_harness not in HANDOFF_NO_PROMPT:
-        cmd.append(initial_prompt)
+    if target_harness == "fx":
+        cmd = build_fx_handoff_cmd(initial_prompt)
+    else:
+        cmd = [target_harness]
+        if initial_prompt and target_harness not in HANDOFF_NO_PROMPT:
+            cmd.append(initial_prompt)
 
     try:
         os.execvp(cmd[0], cmd)
@@ -354,6 +394,99 @@ def build_opencode_cmd(
     return cmd
 
 
+FX_NO_TOOLS_PROMPT = (
+    "Tool instructions: Do not call any tools. Answer directly from your own knowledge "
+    "and the provided context."
+)
+
+
+def _fx_session_file() -> str:
+    return os.path.join(get_terminal_session_dir("fx"), FX_SESSION_FILE)
+
+
+def load_fx_session_id() -> str | None:
+    """Return the fx session id remembered for the current terminal tab, if any."""
+    try:
+        with open(_fx_session_file(), encoding="utf-8") as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
+
+
+def save_fx_session_id(session_id: str) -> None:
+    try:
+        with open(_fx_session_file(), "w", encoding="utf-8") as f:
+            f.write(session_id)
+    except OSError:
+        pass
+
+
+def build_fx_cmd(
+    model: str | None,
+    enable_tools: bool = True,
+    prompt: str = "",
+    session_mode: str = "auto",
+) -> list[str]:
+    # fx has no --session-dir: remember its session id per terminal tab and
+    # resume with --resume-id. --json lets parse_fx_output capture the id.
+    cmd = ["fx", "ask", "--json"]
+    if session_mode == "none":
+        cmd.append("--no-save")
+    elif session_mode == "new":
+        _prepare_session_dir("fx", "new")
+    else:  # auto
+        session_id = load_fx_session_id()
+        if session_id:
+            cmd.extend(["--resume-id", session_id])
+
+    preamble = LATEX_SYSTEM_PROMPT
+    if enable_tools:
+        cmd.append("--full-access")
+    else:
+        # fx has no flag to disable tools; fall back to instructing the model
+        preamble = f"{FX_NO_TOOLS_PROMPT}\n{preamble}"
+    if model:
+        cmd.extend(["--model", model])
+    # --system would replace fx's whole base prompt, so prepend instead.
+    cmd.extend(["--", f"{preamble}\n\n{prompt}"])
+    return cmd
+
+
+def parse_fx_output(stdout: str, session_mode: str = "auto") -> str:
+    """Extract the final answer from `fx ask --json` and remember the session id."""
+    try:
+        data = json.loads(stdout.strip().splitlines()[-1])
+    except (json.JSONDecodeError, IndexError):
+        return stdout
+    if not isinstance(data, dict):
+        return stdout
+    session_id = data.get("session_id")
+    if session_id and session_mode != "none":
+        save_fx_session_id(str(session_id))
+    return str(data.get("final_output") or data.get("output") or "")
+
+
+def build_fx_handoff_cmd(initial_prompt: str = "") -> list[str]:
+    """fx's TUI takes no initial prompt: seed a saved session via `fx ask`, then resume it."""
+    session_id = load_fx_session_id()
+    if initial_prompt:
+        seed_cmd = ["fx", "ask", "--json"]
+        if session_id:
+            seed_cmd.extend(["--resume-id", session_id])
+        seed_cmd.extend(["--", initial_prompt])
+        sys.stderr.write("Seeding fx session with conversation context...\n")
+        try:
+            proc = subprocess.run(seed_cmd, capture_output=True, stdin=subprocess.DEVNULL, text=True)
+            if proc.returncode == 0:
+                parse_fx_output(proc.stdout)
+                session_id = load_fx_session_id() or session_id
+            elif proc.stderr:
+                sys.stderr.write(proc.stderr)
+        except OSError as e:
+            sys.stderr.write(f"Warning: could not seed fx session: {e}\n")
+    return ["fx", "--resume", session_id] if session_id else ["fx"]
+
+
 HARNESS_REGISTRY: dict[str, dict[str, Any]] = {
     "pi": {
         "name": "pi",
@@ -384,6 +517,12 @@ HARNESS_REGISTRY: dict[str, dict[str, Any]] = {
         "name": "opencode",
         "description": "OpenCode CLI assistant",
         "builder": build_opencode_cmd,
+    },
+    "fx": {
+        "name": "fx",
+        "description": "fx native coding agent (fx.sh)",
+        "builder": build_fx_cmd,
+        "output_parser": parse_fx_output,
     },
 }
 
@@ -892,6 +1031,9 @@ def query_harness(
     else:
         out, err = _run_harness(cmd)
     elapsed = time.monotonic() - t0
+    parser = HARNESS_REGISTRY[harness_name].get("output_parser")
+    if parser and out:
+        out = parser(out, session_mode=opts.session_mode)
     if not out and err:
         sys.stderr.write(err)
     return out or "", harness_name, elapsed

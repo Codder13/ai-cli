@@ -2,7 +2,7 @@
 
 > **Lightweight, fast terminal AI wrapper around modern coding harnesses with Rich markdown and math rendering.**
 
-Wraps fast headless AI harnesses (`pi`, `omp`, `claude`, `codex`, `copilot`, `opencode`) for everyday queries and Unix pipelines.
+Wraps fast headless AI harnesses (`pi`, `omp`, `claude`, `codex`, `copilot`, `opencode`, `fx`) for everyday queries and Unix pipelines.
 
 ![ai-flow-cli demo](assets/demo.gif)
 
@@ -10,7 +10,7 @@ Wraps fast headless AI harnesses (`pi`, `omp`, `claude`, `codex`, `copilot`, `op
 
 ## ⚡ Features
 
-- 🚀 **Multi-Harness Support** — seamlessly autodetect and use `pi`, `omp`, `claude`, `codex`, `copilot`, or `opencode`.
+- 🚀 **Multi-Harness Support** — seamlessly autodetect and use `pi`, `omp`, `claude`, `codex`, `copilot`, `opencode`, or `fx`.
 - 🧙 **Interactive Setup Wizard** — run `ai --wizard` to inspect detected harnesses and choose your default.
 - 🎨 **Rich Terminal Markdown & LaTeX** — renders clean markdown, tables, syntax highlighting, and math formulas in the terminal.
 - 💬 **No Quotes Required** — run `ai what is the biggest object on earth` directly.
